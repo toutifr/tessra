@@ -174,13 +174,20 @@ END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- Schedule cron jobs
+-- Note: pg_net extension must be enabled (done in 00001)
+-- expire-publications: calls edge function every minute
 SELECT cron.schedule('expire-publications', '*/1 * * * *', $$
-  SELECT net.http_post(
+  SELECT extensions.http_post(
     url := current_setting('app.settings.supabase_url') || '/functions/v1/expire-publications',
-    headers := jsonb_build_object('Authorization', 'Bearer ' || current_setting('app.settings.service_role_key'))
+    headers := jsonb_build_object(
+      'Authorization', 'Bearer ' || current_setting('app.settings.service_role_key'),
+      'Content-Type', 'application/json'
+    ),
+    body := '{}'::jsonb
   );
 $$);
 
+-- update-expiring-squares: mark squares in last hour as en_expiration
 SELECT cron.schedule('update-expiring-squares', '*/1 * * * *', $$
   SELECT update_expiring_squares();
 $$);

@@ -64,12 +64,5 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- RLS: blocked users cannot publish
-CREATE POLICY profiles_block_check ON publications
-  FOR INSERT WITH CHECK (
-    NOT EXISTS (
-      SELECT 1 FROM profiles
-      WHERE profiles.user_id = auth.uid()
-      AND profiles.is_blocked = TRUE
-    )
-  );
+-- Note: blocked user enforcement is handled by trigger in 00006_anti_abuse.sql
+-- This avoids conflicts with the publications_insert RLS policy from 00001

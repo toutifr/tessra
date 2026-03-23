@@ -1,6 +1,7 @@
 -- Enable required extensions
 CREATE EXTENSION IF NOT EXISTS "postgis";
-CREATE EXTENSION IF NOT EXISTS "pg_cron";
+CREATE EXTENSION IF NOT EXISTS "pg_net" WITH SCHEMA extensions;
+CREATE EXTENSION IF NOT EXISTS "pg_cron" WITH SCHEMA cron;
 
 -- ============================================================
 -- PROFILES
@@ -45,8 +46,9 @@ CREATE TABLE squares (
 
 CREATE INDEX idx_squares_geohash ON squares(geohash);
 CREATE INDEX idx_squares_status ON squares(status);
+-- Functional index on geography for spatial queries
 CREATE INDEX idx_squares_location ON squares USING GIST (
-  ST_SetSRID(ST_MakePoint(lng, lat), 4326)::geography
+  (ST_SetSRID(ST_MakePoint(lng, lat), 4326)::geography)
 );
 
 -- ============================================================
