@@ -1,0 +1,40 @@
+schema: spec-driven
+
+context: |
+  Project: Tessra
+  Domain: Ephemeral social map — geo-based content sharing
+  Concept: World map divided into geographic squares. Each square can hold
+  one image/moment visible for 24h. After expiration, the square becomes
+  free again. Users can pay to extend visibility or take over occupied squares.
+  Dynamic pricing based on demand.
+
+  Tech stack:
+    - Mobile: Expo + React Native (single codebase iOS/Android)
+    - Build/release: EAS
+    - Backend: Supabase (auth, database, storage, edge functions)
+    - Map: Mapbox
+    - Auth: email + Apple Sign-In + Google Sign-In
+    - Payments: In-app purchases (iOS/Android)
+    - Repo: GitHub (toutifr/tessra)
+    - AI: Claude AI
+    - Spec-driven development: OpenSpec
+
+  Conventions:
+    - Conventional commits
+    - TypeScript everywhere
+    - MVP-first: no unnecessary complexity
+    - French-speaking team, English code/comments
+
+rules:
+  proposal:
+    - Focus strictly on MVP scope
+    - Always include Non-goals section with V2 features
+    - Reference the 5 validation goals (understand concept, publish, return to map, pay, understand replacement)
+  design:
+    - Propose Supabase data model with tables users, profiles, squares, publications, publication_history, payments, moderation_flags
+    - Define square statuses (libre, occupe_gratuit, occupe_payant, en_expiration, remplacable, signale, en_moderation, bloque)
+    - Keep architecture simple and testable
+  tasks:
+    - Break tasks into chunks of max 4 hours
+    - Prioritize core loop first (map > square > upload > 24h timer > replacement)
+    - Tag each task with priority (P0/P1/P2)
