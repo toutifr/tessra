@@ -5,6 +5,24 @@ node_modules/
 .expo/
 dist/
 web-build/
+expo-env.d.ts
+
+# Native
+.kotlin/
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+# Metro
+.metro-health-check*
+
+# Debug
+npm-debug.*
+yarn-debug.*
+yarn-error.*
 
 # EAS
 *.tgz
@@ -23,6 +41,14 @@ web-build/
 # OS
 .DS_Store
 Thumbs.db
+*.pem
+
+# TypeScript
+*.tsbuildinfo
+
+# Generated native folders
+/ios
+/android
 
 # OpenSpec telemetry
 OPENSPEC_SUMMARY.txt

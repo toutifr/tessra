@@ -1,0 +1,25 @@
+[project]
+id = "tessra"
+
+[db]
+port = 54322
+shadow_port = 54320
+major_version = 15
+
+[studio]
+enabled = true
+port = 54323
+
+[auth]
+site_url = "http://localhost:8081"
+additional_redirect_urls = ["exp://localhost:8081"]
+
+[auth.external.apple]
+enabled = true
+client_id = ""
+secret = ""
+
+[auth.external.google]
+enabled = true
+client_id = ""
+secret = ""
