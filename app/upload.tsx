@@ -12,9 +12,13 @@ import { router, useLocalSearchParams } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import * as ImageManipulator from "expo-image-manipulator";
 import { supabase } from "../src/lib/supabase";
+import { decode } from "../src/lib/geohash";
 
 export default function UploadScreen() {
-  const { squareId } = useLocalSearchParams<{ squareId: string }>();
+  const { squareId, geohash } = useLocalSearchParams<{
+    squareId?: string;
+    geohash?: string;
+  }>();
   const [imageUri, setImageUri] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
 
@@ -38,7 +42,6 @@ export default function UploadScreen() {
         });
 
     if (!result.canceled && result.assets[0]) {
-      // Compress to max 1024x1024
       const manipulated = await ImageManipulator.manipulateAsync(
         result.assets[0].uri,
         [{ resize: { width: 1024, height: 1024 } }],
@@ -49,21 +52,23 @@ export default function UploadScreen() {
   };
 
   const handleUpload = async () => {
-    if (!imageUri || !squareId) return;
+    if (!imageUri) return;
+    if (!squareId && !geohash) return;
 
     setUploading(true);
     try {
       const {
         data: { user },
       } = await supabase.auth.getUser();
-      if (!user) throw new Error("Not authenticated");
+      if (!user) throw new Error("Connectez-vous pour publier");
 
       // Read the file as blob
       const response = await fetch(imageUri);
       const blob = await response.blob();
       const arrayBuffer = await new Response(blob).arrayBuffer();
 
-      const fileName = `${squareId}/${Date.now()}.jpg`;
+      const storageKey = squareId ?? geohash!;
+      const fileName = `${storageKey}/${Date.now()}.jpg`;
 
       // Upload to Supabase Storage
       const { error: uploadError } = await supabase.storage
@@ -77,12 +82,28 @@ export default function UploadScreen() {
         data: { publicUrl },
       } = supabase.storage.from("publications").getPublicUrl(fileName);
 
-      // Create publication via RPC (handles locking + rate limiting)
-      const { data: pubId, error: pubError } = await supabase.rpc("publish_to_square", {
-        p_square_id: squareId,
-        p_user_id: user.id,
-        p_image_url: publicUrl,
-      });
+      let pubError;
+
+      if (squareId) {
+        // Existing square — use original RPC
+        const result = await supabase.rpc("publish_to_square", {
+          p_square_id: squareId,
+          p_user_id: user.id,
+          p_image_url: publicUrl,
+        });
+        pubError = result.error;
+      } else if (geohash) {
+        // New square — create square + publish atomically
+        const center = decode(geohash);
+        const result = await supabase.rpc("publish_new_square", {
+          p_geohash: geohash,
+          p_lat: center.lat,
+          p_lng: center.lng,
+          p_user_id: user.id,
+          p_image_url: publicUrl,
+        });
+        pubError = result.error;
+      }
 
       if (pubError) throw pubError;
 
@@ -90,7 +111,12 @@ export default function UploadScreen() {
         { text: "OK", onPress: () => router.back() },
       ]);
     } catch (e: unknown) {
-      const message = e instanceof Error ? e.message : "Erreur lors de la publication";
+      const message =
+        e instanceof Error
+          ? e.message
+          : typeof e === "object" && e !== null && "message" in e
+            ? String((e as { message: unknown }).message)
+            : JSON.stringify(e);
       Alert.alert("Erreur", message);
     } finally {
       setUploading(false);
@@ -100,6 +126,9 @@ export default function UploadScreen() {
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Publier une image</Text>
+      {geohash && (
+        <Text style={styles.subtitle}>Carré : {geohash}</Text>
+      )}
 
       {imageUri ? (
         <View style={styles.previewContainer}>
@@ -144,7 +173,8 @@ export default function UploadScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#fff", padding: 24, justifyContent: "center" },
-  title: { fontSize: 24, fontWeight: "bold", textAlign: "center", marginBottom: 32 },
+  title: { fontSize: 24, fontWeight: "bold", textAlign: "center", marginBottom: 8 },
+  subtitle: { fontSize: 14, color: "#888", textAlign: "center", marginBottom: 24 },
   choices: { gap: 16 },
   choiceButton: {
     backgroundColor: "#007AFF",

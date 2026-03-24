@@ -7,8 +7,13 @@ interface ViewportBounds {
   sw: { lat: number; lng: number };
 }
 
+/** Square with its active publication image URL */
+export interface SquareWithImage extends Square {
+  image_url?: string | null;
+}
+
 export function useSquares() {
-  const [squares, setSquares] = useState<Square[]>([]);
+  const [squares, setSquares] = useState<SquareWithImage[]>([]);
   const [loading, setLoading] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
 
@@ -20,7 +25,8 @@ export function useSquares() {
 
     setLoading(true);
     try {
-      const { data, error } = await supabase
+      // 1. Fetch squares in viewport
+      const { data: squaresData, error: sqErr } = await supabase
         .from("squares")
         .select("*")
         .gte("lat", bounds.sw.lat)
@@ -29,8 +35,43 @@ export function useSquares() {
         .lte("lng", bounds.ne.lng)
         .limit(500);
 
-      if (error) throw error;
-      setSquares((data as Square[]) ?? []);
+      if (sqErr) throw sqErr;
+      if (!squaresData || squaresData.length === 0) {
+        setSquares([]);
+        return;
+      }
+
+      // 2. Get publication image URLs for squares that have active publications
+      const pubIds = squaresData
+        .map((s) => s.current_publication_id)
+        .filter(Boolean) as string[];
+
+      let imageMap = new Map<string, string>();
+
+      if (pubIds.length > 0) {
+        const { data: pubsData } = await supabase
+          .from("publications")
+          .select("id, image_url")
+          .in("id", pubIds);
+
+        if (pubsData) {
+          for (const pub of pubsData) {
+            if (pub.image_url) {
+              imageMap.set(pub.id, pub.image_url);
+            }
+          }
+        }
+      }
+
+      // 3. Merge
+      const enriched: SquareWithImage[] = squaresData.map((sq) => ({
+        ...sq,
+        image_url: sq.current_publication_id
+          ? imageMap.get(sq.current_publication_id) ?? null
+          : null,
+      })) as SquareWithImage[];
+
+      setSquares(enriched);
     } catch {
       // Silently handle aborted requests
     } finally {
