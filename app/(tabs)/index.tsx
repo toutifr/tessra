@@ -1,35 +1,36 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useMemo } from "react";
 import { ActivityIndicator, StyleSheet, View } from "react-native";
-import MapboxGL, { type MapState } from "@rnmapbox/maps";
+import MapboxGL from "@rnmapbox/maps";
 import * as Location from "expo-location";
 import { router } from "expo-router";
 import { MAPBOX_ACCESS_TOKEN } from "../../src/constants/config";
-import { useSquares } from "../../src/hooks/useSquares";
-import SquareLayer from "../../src/components/SquareLayer";
-import { SquareWithImage } from "../../src/hooks/useSquares";
-import { geohashesInBounds } from "../../src/lib/geohashGrid";
+import { cellAt, cellFromId } from "../../src/lib/kmGrid";
+import GridLayer from "../../src/components/GridLayer";
+import TileLayer from "../../src/components/TileLayer";
+import { useSquares, SquareWithImage } from "../../src/hooks/useSquares";
+import { onOptimisticUpload, type OptimisticUpload } from "../../src/lib/tileEvents";
+import * as Haptics from "expo-haptics";
 
 MapboxGL.setAccessToken(MAPBOX_ACCESS_TOKEN);
 
 const DEFAULT_CENTER: [number, number] = [2.3522, 48.8566]; // Paris
 const DEFAULT_ZOOM = 14;
-const GRID_MIN_ZOOM = 9;
-
-/** Pick geohash precision based on zoom level to keep cell count manageable */
-function precisionForZoom(zoom: number): number {
-  if (zoom >= 15) return 7; // ~150m × 150m
-  if (zoom >= 12) return 6; // ~1.2km × 0.6km
-  if (zoom >= 9) return 5;  // ~5km × 5km
-  return 4;                  // ~39km × 20km
-}
 
 export default function MapScreen() {
   const [userLocation, setUserLocation] = useState<[number, number] | null>(null);
   const [locationLoading, setLocationLoading] = useState(true);
-  const [gridHashes, setGridHashes] = useState<string[]>([]);
+  const [currentZoom, setCurrentZoom] = useState(DEFAULT_ZOOM);
+  const [viewportBounds, setViewportBounds] = useState<{
+    sw: { lat: number; lng: number };
+    ne: { lat: number; lng: number };
+  } | null>(null);
+  const [optimisticUpload, setOptimisticUpload] = useState<OptimisticUpload | null>(null);
   const { squares, fetchSquaresInViewport } = useSquares();
   const cameraRef = useRef<MapboxGL.Camera>(null);
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const mapViewRef = useRef<MapboxGL.MapView>(null);
+  const squaresRef = useRef<SquareWithImage[]>([]);
+
+  squaresRef.current = squares;
 
   useEffect(() => {
     (async () => {
@@ -42,41 +43,70 @@ export default function MapScreen() {
     })();
   }, []);
 
+  useEffect(() => {
+    return onOptimisticUpload((event) => {
+      setOptimisticUpload(event);
+      setTimeout(() => setOptimisticUpload(null), 10_000);
+    });
+  }, []);
+
+  // Real-time grid updates during pan/zoom (lightweight, cached in GridLayer)
+  const handleCameraChanged = useCallback(
+    (state: MapboxGL.MapState) => {
+      const { bounds: mapBounds, zoom } = state.properties;
+      setCurrentZoom(zoom);
+
+      if (mapBounds) {
+        const ne = { lat: mapBounds.ne[1], lng: mapBounds.ne[0] };
+        const sw = { lat: mapBounds.sw[1], lng: mapBounds.sw[0] };
+        setViewportBounds({ sw, ne });
+      }
+    },
+    [],
+  );
+
+  // Heavy data fetching only after map stops moving
   const handleMapIdle = useCallback(
-    (state: MapState) => {
-      if (debounceRef.current) clearTimeout(debounceRef.current);
-
-      debounceRef.current = setTimeout(() => {
-        const { bounds: mapBounds, zoom } = state.properties;
-
-        if (mapBounds && zoom >= GRID_MIN_ZOOM) {
-          const ne = { lat: mapBounds.ne[1], lng: mapBounds.ne[0] };
-          const sw = { lat: mapBounds.sw[1], lng: mapBounds.sw[0] };
-
-          // Generate the full grid for the viewport — precision adapts to zoom
-          const precision = precisionForZoom(zoom);
-          const hashes = geohashesInBounds(sw, ne, precision);
-          setGridHashes(hashes);
-
-          // Also fetch DB squares for this viewport
-          fetchSquaresInViewport({ ne, sw });
-        } else {
-          // Zoomed out too far — hide grid
-          setGridHashes([]);
-        }
-      }, 300);
+    (state: MapboxGL.MapState) => {
+      const { bounds: mapBounds, zoom } = state.properties;
+      if (mapBounds && zoom >= 9) {
+        const ne = { lat: mapBounds.ne[1], lng: mapBounds.ne[0] };
+        const sw = { lat: mapBounds.sw[1], lng: mapBounds.sw[0] };
+        const latPad = (ne.lat - sw.lat) * 0.5;
+        const lngPad = (ne.lng - sw.lng) * 0.5;
+        fetchSquaresInViewport({
+          ne: { lat: ne.lat + latPad, lng: ne.lng + lngPad },
+          sw: { lat: sw.lat - latPad, lng: sw.lng - lngPad },
+        });
+      }
     },
     [fetchSquaresInViewport],
   );
 
-  const handleSquareTap = useCallback((geohash: string, square: SquareWithImage | null) => {
-    if (square) {
-      router.push(`/square/${square.id}`);
-    } else {
-      // Libre square — navigate to upload with geohash
-      router.push(`/upload?geohash=${geohash}`);
-    }
-  }, []);
+  const handleMapPress = useCallback(
+    (event: GeoJSON.Feature) => {
+      if (currentZoom < 12) return;
+      const coords = (event.geometry as GeoJSON.Point).coordinates;
+      const [lng, lat] = coords;
+      const cell = cellAt(lat, lng);
+
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+
+      const square = squaresRef.current.find((sq) => sq.cell_id === cell.id);
+      if (square) {
+        router.push(`/square/${square.id}`);
+      } else {
+        router.push(`/upload?cellId=${cell.id}`);
+      }
+    },
+    [currentZoom],
+  );
+
+  // Photos to overlay
+  const photosToShow = useMemo(() => {
+    if (currentZoom < 9) return [];
+    return squares.filter((sq) => sq.image_url && sq.cell_id);
+  }, [squares, currentZoom]);
 
   if (locationLoading) {
     return (
@@ -91,9 +121,13 @@ export default function MapScreen() {
   return (
     <View style={styles.container}>
       <MapboxGL.MapView
+        ref={mapViewRef}
         style={styles.map}
-        styleURL={MapboxGL.StyleURL.Street}
+        styleURL={MapboxGL.StyleURL.Dark}
+        projection="globe"
+        onCameraChanged={handleCameraChanged}
         onMapIdle={handleMapIdle}
+        onPress={handleMapPress}
       >
         <MapboxGL.Camera
           ref={cameraRef}
@@ -103,11 +137,58 @@ export default function MapScreen() {
 
         {userLocation && <MapboxGL.UserLocation visible />}
 
-        <SquareLayer
-          squares={squares}
-          gridHashes={gridHashes}
-          onSquareTap={handleSquareTap}
-        />
+        {/* Photos rendues dans les tuiles — visibles à TOUS les zooms */}
+        <TileLayer />
+
+        {/* Grille tracée directement sur la carte — pas de réseau */}
+        <GridLayer bounds={viewportBounds} zoom={currentZoom} />
+
+        {/* Photos côté client en plus (chargement rapide en zoom proche) */}
+        {photosToShow.map((sq) => {
+          const cell = cellFromId(sq.cell_id!);
+          if (!cell || !sq.image_url) return null;
+          return (
+            <MapboxGL.ImageSource
+              key={`photo-${sq.id}`}
+              id={`photo-${sq.id}`}
+              coordinates={[
+                [cell.sw.lng, cell.ne.lat],
+                [cell.ne.lng, cell.ne.lat],
+                [cell.ne.lng, cell.sw.lat],
+                [cell.sw.lng, cell.sw.lat],
+              ]}
+              url={sq.image_url}
+            >
+              <MapboxGL.RasterLayer
+                id={`photo-layer-${sq.id}`}
+                style={{ rasterOpacity: 1 }}
+              />
+            </MapboxGL.ImageSource>
+          );
+        })}
+
+        {/* Optimistic overlay */}
+        {optimisticUpload && (() => {
+          const cell = cellFromId(optimisticUpload.cellId);
+          if (!cell) return null;
+          return (
+            <MapboxGL.ImageSource
+              id="optimistic-upload"
+              coordinates={[
+                [cell.sw.lng, cell.ne.lat],
+                [cell.ne.lng, cell.ne.lat],
+                [cell.ne.lng, cell.sw.lat],
+                [cell.sw.lng, cell.sw.lat],
+              ]}
+              url={optimisticUpload.imageUri}
+            >
+              <MapboxGL.RasterLayer
+                id="optimistic-upload-layer"
+                style={{ rasterOpacity: 1 }}
+              />
+            </MapboxGL.ImageSource>
+          );
+        })()}
       </MapboxGL.MapView>
     </View>
   );

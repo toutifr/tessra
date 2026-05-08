@@ -56,7 +56,9 @@ export default {
         {
           RNMapboxMapsImpl: "mapbox",
           RNMapboxMapsDownloadToken:
-            process.env.MAPBOX_DOWNLOAD_TOKEN || "MISSING_TOKEN",
+            process.env.MAPBOX_DOWNLOAD_TOKEN ||
+            process.env.RNMAPBOX_MAPS_DOWNLOAD_TOKEN ||
+            "MISSING_TOKEN",
         },
       ],
       "expo-apple-authentication",

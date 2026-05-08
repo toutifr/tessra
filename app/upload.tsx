@@ -6,21 +6,29 @@ import {
   Pressable,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import * as ImageManipulator from "expo-image-manipulator";
 import { supabase } from "../src/lib/supabase";
-import { decode } from "../src/lib/geohash";
+import { cellFromId } from "../src/lib/kmGrid";
+import { emitOptimisticUpload } from "../src/lib/tileEvents";
 
 export default function UploadScreen() {
-  const { squareId, geohash } = useLocalSearchParams<{
+  const { squareId, cellId, replace, minPrice: minPriceParam } = useLocalSearchParams<{
     squareId?: string;
-    geohash?: string;
+    cellId?: string;
+    replace?: string;
+    minPrice?: string;
   }>();
   const [imageUri, setImageUri] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
+  const isReplacement = replace === "true";
+  const minPrice = Number(minPriceParam ?? 0);
+  const [priceInput, setPriceInput] = useState(String(minPrice));
+  const [priceError, setPriceError] = useState<string | null>(null);
 
   const pickImage = async (useCamera: boolean) => {
     const permission = useCamera
@@ -51,9 +59,25 @@ export default function UploadScreen() {
     }
   };
 
+  const validatePrice = (): number | null => {
+    const price = Number(priceInput);
+    if (isNaN(price) || price < minPrice) {
+      setPriceError(`Le prix minimum est ${minPrice}€`);
+      return null;
+    }
+    setPriceError(null);
+    return price;
+  };
+
   const handleUpload = async () => {
     if (!imageUri) return;
-    if (!squareId && !geohash) return;
+    if (!squareId && !cellId) return;
+
+    // Validate price for replacements
+    if (isReplacement) {
+      const price = validatePrice();
+      if (price === null) return;
+    }
 
     setUploading(true);
     try {
@@ -67,7 +91,7 @@ export default function UploadScreen() {
       const blob = await response.blob();
       const arrayBuffer = await new Response(blob).arrayBuffer();
 
-      const storageKey = squareId ?? geohash!;
+      const storageKey = squareId ?? cellId!;
       const fileName = `${storageKey}/${Date.now()}.jpg`;
 
       // Upload to Supabase Storage
@@ -84,21 +108,33 @@ export default function UploadScreen() {
 
       let pubError;
 
-      if (squareId) {
-        // Existing square — use original RPC
+      if (isReplacement && squareId) {
+        // Paid replacement of occupied square
+        const price = Number(priceInput);
+        const result = await supabase.rpc("replace_square", {
+          p_square_id: squareId,
+          p_user_id: user.id,
+          p_image_url: publicUrl,
+          p_price_paid: price,
+        });
+        pubError = result.error;
+      } else if (squareId) {
+        // Free publish to existing libre square
         const result = await supabase.rpc("publish_to_square", {
           p_square_id: squareId,
           p_user_id: user.id,
           p_image_url: publicUrl,
         });
         pubError = result.error;
-      } else if (geohash) {
-        // New square — create square + publish atomically
-        const center = decode(geohash);
+      } else if (cellId) {
+        // New square from cell ID — create square + publish atomically
+        const cell = cellFromId(cellId);
+        if (!cell) throw new Error("ID de cellule invalide");
+
         const result = await supabase.rpc("publish_new_square", {
-          p_geohash: geohash,
-          p_lat: center.lat,
-          p_lng: center.lng,
+          p_geohash: cellId,
+          p_lat: cell.center.lat,
+          p_lng: cell.center.lng,
           p_user_id: user.id,
           p_image_url: publicUrl,
         });
@@ -107,7 +143,25 @@ export default function UploadScreen() {
 
       if (pubError) throw pubError;
 
-      Alert.alert("Publié !", "Votre image est maintenant visible pendant 24h.", [
+      // Emit optimistic update so the map shows the photo immediately
+      const effectiveCellId = cellId ?? squareId;
+      if (effectiveCellId) {
+        const cell = cellFromId(effectiveCellId);
+        if (cell) {
+          emitOptimisticUpload({
+            cellId: effectiveCellId,
+            imageUri: imageUri,
+            lat: cell.center.lat,
+            lng: cell.center.lng,
+          });
+        }
+      }
+
+      const message = isReplacement
+        ? "Votre image a remplacé la précédente !"
+        : "Votre image est maintenant visible tant que personne ne prend votre place.";
+
+      Alert.alert("Publié !", message, [
         { text: "OK", onPress: () => router.back() },
       ]);
     } catch (e: unknown) {
@@ -117,7 +171,17 @@ export default function UploadScreen() {
           : typeof e === "object" && e !== null && "message" in e
             ? String((e as { message: unknown }).message)
             : JSON.stringify(e);
-      Alert.alert("Erreur", message);
+
+      // Handle stale price error
+      if (typeof message === "string" && message.includes("Price too low")) {
+        Alert.alert(
+          "Prix mis à jour",
+          "Le prix minimum a changé. Veuillez réessayer.",
+          [{ text: "OK" }],
+        );
+      } else {
+        Alert.alert("Erreur", message);
+      }
     } finally {
       setUploading(false);
     }
@@ -125,14 +189,31 @@ export default function UploadScreen() {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Publier une image</Text>
-      {geohash && (
-        <Text style={styles.subtitle}>Carré : {geohash}</Text>
-      )}
+      <Text style={styles.title}>
+        {isReplacement ? "Prendre cette place" : "Publier une image"}
+      </Text>
 
       {imageUri ? (
         <View style={styles.previewContainer}>
           <Image source={{ uri: imageUri }} style={styles.preview} />
+
+          {isReplacement && (
+            <View style={styles.priceSection}>
+              <Text style={styles.priceLabel}>Prix minimum : {minPrice}€</Text>
+              <TextInput
+                style={[styles.priceInput, priceError ? styles.priceInputError : null]}
+                value={priceInput}
+                onChangeText={(text) => {
+                  setPriceInput(text);
+                  setPriceError(null);
+                }}
+                keyboardType="numeric"
+                placeholder={`${minPrice}`}
+              />
+              {priceError && <Text style={styles.errorText}>{priceError}</Text>}
+            </View>
+          )}
+
           <View style={styles.previewActions}>
             <Pressable
               style={styles.changeButton}
@@ -148,7 +229,11 @@ export default function UploadScreen() {
               {uploading ? (
                 <ActivityIndicator color="#fff" />
               ) : (
-                <Text style={styles.uploadText}>Publier</Text>
+                <Text style={styles.uploadText}>
+                  {isReplacement
+                    ? `Prendre cette place pour ${priceInput}€`
+                    : "Publier"}
+                </Text>
               )}
             </Pressable>
           </View>
@@ -174,7 +259,6 @@ export default function UploadScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#fff", padding: 24, justifyContent: "center" },
   title: { fontSize: 24, fontWeight: "bold", textAlign: "center", marginBottom: 8 },
-  subtitle: { fontSize: 14, color: "#888", textAlign: "center", marginBottom: 24 },
   choices: { gap: 16 },
   choiceButton: {
     backgroundColor: "#007AFF",
@@ -199,9 +283,23 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     padding: 16,
     paddingHorizontal: 32,
+    flexShrink: 1,
   },
   disabled: { opacity: 0.6 },
   uploadText: { color: "#fff", fontSize: 16, fontWeight: "600" },
   cancelButton: { marginTop: 24, alignItems: "center" },
   cancelText: { color: "#999", fontSize: 16 },
+  priceSection: { marginBottom: 16, width: "100%" },
+  priceLabel: { fontSize: 14, color: "#666", marginBottom: 8, textAlign: "center" },
+  priceInput: {
+    borderWidth: 1,
+    borderColor: "#ddd",
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 20,
+    textAlign: "center",
+    fontWeight: "bold",
+  },
+  priceInputError: { borderColor: "#FF3B30" },
+  errorText: { color: "#FF3B30", fontSize: 12, marginTop: 4, textAlign: "center" },
 });

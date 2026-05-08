@@ -5,8 +5,8 @@
   "private": true,
   "scripts": {
     "start": "expo start",
-    "android": "expo start --android",
-    "ios": "expo start --ios",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
     "web": "expo start --web",
     "lint": "eslint . --ext .ts,.tsx"
   },
@@ -21,6 +21,7 @@
     "expo-crypto": "~55.0.10",
     "expo-dev-client": "~55.0.18",
     "expo-device": "~55.0.10",
+    "expo-haptics": "~55.0.14",
     "expo-image-manipulator": "^55.0.11",
     "expo-image-picker": "^55.0.13",
     "expo-linking": "~55.0.8",

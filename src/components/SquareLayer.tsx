@@ -1,103 +1,128 @@
 import { useMemo } from "react";
-import { Image, Pressable, StyleSheet } from "react-native";
+import { Image, Pressable, Text, View } from "react-native";
 import MapboxGL from "@rnmapbox/maps";
 import { SquareStatus, STATUS_COLORS } from "../types/square";
 import { SquareWithImage } from "../hooks/useSquares";
-import { bounds as geohashBounds, decode as geohashDecode } from "../lib/geohash";
+import { GridCell, cellFromId } from "../lib/kmGrid";
 
 interface Props {
   squares: SquareWithImage[];
-  gridHashes: string[];
-  onSquareTap: (geohash: string, square: SquareWithImage | null) => void;
+  gridCells: GridCell[];
+  zoom: number;
+  onCellTap: (cellId: string, square: SquareWithImage | null) => void;
 }
 
-function hashToPolygon(geohash: string): number[][] {
-  const b = geohashBounds(geohash);
-  return [
-    [b.sw.lng, b.sw.lat],
-    [b.ne.lng, b.sw.lat],
-    [b.ne.lng, b.ne.lat],
-    [b.sw.lng, b.ne.lat],
-    [b.sw.lng, b.sw.lat],
-  ];
+/**
+ * Convert 1km to pixels at a given zoom level and latitude.
+ * Mapbox tile size = 512px, world = 2^zoom tiles at zoom level.
+ * 1px at zoom z at equator = 40075km / (512 * 2^z)
+ * At latitude φ: 1px = 40075 * cos(φ) / (512 * 2^z) km
+ * So 1km = 512 * 2^z / (40075 * cos(φ)) pixels
+ */
+function kmToPixels(zoom: number, latDeg: number): number {
+  const cosLat = Math.cos((Math.abs(latDeg) * Math.PI) / 180);
+  if (cosLat < 0.01) return 1;
+  return (512 * Math.pow(2, zoom)) / (40075 * cosLat);
 }
 
-export default function SquareLayer({ squares = [], gridHashes = [], onSquareTap }: Props) {
-  // Index DB squares by geohash for quick lookup
-  const squaresByHash = useMemo(() => {
+export default function SquareLayer({ squares = [], gridCells = [], zoom, onCellTap }: Props) {
+  // Index DB squares by cell_id for quick lookup
+  const squaresByCellId = useMemo(() => {
     const map = new Map<string, SquareWithImage>();
     for (const sq of squares) {
-      map.set(sq.geohash, sq);
+      map.set(sq.cell_id, sq);
     }
     return map;
   }, [squares]);
 
   // Squares that have images to display
   const squaresWithImages = useMemo(
-    () => squares.filter((sq) => sq.image_url),
+    () => squares.filter((sq) => sq.image_url && sq.cell_id),
     [squares],
   );
 
-  // Grid polygon features
+  // Grid polygon features — every cell rendered, DB squares override color
   const gridCollection = useMemo<GeoJSON.FeatureCollection>(() => {
-    if (gridHashes.length === 0) {
+    if (gridCells.length === 0) {
       return { type: "FeatureCollection", features: [] };
     }
 
-    const features: GeoJSON.Feature[] = gridHashes.map((hash, index) => {
-      const dbSquare = squaresByHash.get(hash);
+    const features: GeoJSON.Feature[] = gridCells.map((cell, index) => {
+      const dbSquare = squaresByCellId.get(cell.id);
       const status: SquareStatus = dbSquare?.status ?? "libre";
+      // Don't fill squares that have a publication image — the image will cover them
+      const hasImage = dbSquare?.image_url != null;
+      const minPrice = dbSquare?.replacement_count ?? 0;
+      const priceLabel = status === "occupe" && minPrice > 0 ? `${minPrice}€` : "";
       return {
         type: "Feature",
         id: index,
         properties: {
-          geohash: hash,
-          dbId: dbSquare?.id ?? null,
+          cellId: cell.id,
           status,
           color: STATUS_COLORS[status],
-          hasPublication: dbSquare?.current_publication_id != null,
+          hasImage,
+          priceLabel,
         },
         geometry: {
           type: "Polygon",
-          coordinates: [hashToPolygon(hash)],
+          coordinates: [
+            [
+              [cell.sw.lng, cell.sw.lat],
+              [cell.ne.lng, cell.sw.lat],
+              [cell.ne.lng, cell.ne.lat],
+              [cell.sw.lng, cell.ne.lat],
+              [cell.sw.lng, cell.sw.lat],
+            ],
+          ],
         },
       };
     });
 
     return { type: "FeatureCollection", features };
-  }, [gridHashes, squaresByHash]);
+  }, [gridCells, squaresByCellId]);
 
-  if (gridHashes.length === 0) {
+  // Size of 1km cell in pixels at current zoom
+  const cellSizePx = useMemo(() => {
+    if (squaresWithImages.length === 0) return 0;
+    const firstCell = cellFromId(squaresWithImages[0].cell_id);
+    const lat = firstCell?.center.lat ?? 48;
+    return kmToPixels(zoom, lat);
+  }, [zoom, squaresWithImages]);
+
+  if (gridCells.length === 0) {
     return null;
   }
 
   return (
     <>
-      {/* Grid: polygons for all cells */}
+      {/* Grid: 1km × 1km square polygons */}
       <MapboxGL.ShapeSource
         id="squares-source"
         shape={gridCollection}
         onPress={(e) => {
           const feature = e.features?.[0];
-          if (feature?.properties?.geohash) {
-            const hash = feature.properties.geohash as string;
-            const square = squaresByHash.get(hash) ?? null;
-            onSquareTap(hash, square);
+          if (feature?.properties?.cellId) {
+            const id = feature.properties.cellId as string;
+            const square = squaresByCellId.get(id) ?? null;
+            onCellTap(id, square);
           }
         }}
       >
+        {/* Fill for cells WITHOUT images */}
         <MapboxGL.FillLayer
           id="squares-fill"
+          filter={["!=", ["get", "hasImage"], true]}
           style={{
             fillColor: ["get", "color"],
             fillOpacity: [
               "case",
               ["==", ["get", "status"], "libre"],
-              0.1,
-              0.25,
+              0.08,
+              0.3,
             ],
           }}
-          minZoomLevel={9}
+          minZoomLevel={0}
         />
         <MapboxGL.LineLayer
           id="squares-border"
@@ -112,33 +137,47 @@ export default function SquareLayer({ squares = [], gridHashes = [], onSquareTap
               "case",
               ["==", ["get", "status"], "libre"],
               0.5,
-              1.5,
+              2,
             ],
-            lineOpacity: 0.6,
+            lineOpacity: 0.5,
           }}
-          minZoomLevel={9}
+          minZoomLevel={0}
+        />
+        {/* Price labels on occupied squares */}
+        <MapboxGL.SymbolLayer
+          id="squares-price"
+          filter={["!=", ["get", "priceLabel"], ""]}
+          style={{
+            textField: ["get", "priceLabel"],
+            textSize: 12,
+            textColor: "#ffffff",
+            textHaloColor: "#000000",
+            textHaloWidth: 1,
+            textAllowOverlap: true,
+          }}
+          minZoomLevel={10}
         />
       </MapboxGL.ShapeSource>
 
-      {/* Publication images: rendered as native React markers */}
+      {/* Publication images: fill the exact cell area */}
       {squaresWithImages.map((sq) => {
-        const center = geohashDecode(sq.geohash);
+        const cell = cellFromId(sq.cell_id);
+        if (!cell || cellSizePx < 4) return null;
         return (
           <MapboxGL.MarkerView
             key={sq.id}
-            coordinate={[center.lng, center.lat]}
+            coordinate={[cell.center.lng, cell.center.lat]}
             anchor={{ x: 0.5, y: 0.5 }}
             allowOverlap
           >
-            <Pressable
-              onPress={() => onSquareTap(sq.geohash, sq)}
-              style={styles.markerContainer}
-            >
-              <Image
-                source={{ uri: sq.image_url! }}
-                style={styles.markerImage}
-                resizeMode="cover"
-              />
+            <Pressable onPress={() => onCellTap(sq.cell_id, sq)}>
+              <View style={{ width: cellSizePx, height: cellSizePx, overflow: "hidden" }}>
+                <Image
+                  source={{ uri: sq.image_url! }}
+                  style={{ width: cellSizePx, height: cellSizePx }}
+                  resizeMode="cover"
+                />
+              </View>
             </Pressable>
           </MapboxGL.MarkerView>
         );
@@ -146,23 +185,3 @@ export default function SquareLayer({ squares = [], gridHashes = [], onSquareTap
     </>
   );
 }
-
-const styles = StyleSheet.create({
-  markerContainer: {
-    width: 80,
-    height: 80,
-    borderRadius: 8,
-    overflow: "hidden",
-    borderWidth: 2,
-    borderColor: "#fff",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 5,
-  },
-  markerImage: {
-    width: "100%",
-    height: "100%",
-  },
-});

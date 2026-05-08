@@ -1,6 +1,7 @@
 import { useCallback, useRef, useState } from "react";
 import { supabase } from "../lib/supabase";
 import { Square } from "../types/square";
+import { cellAt } from "../lib/kmGrid";
 
 interface ViewportBounds {
   ne: { lat: number; lng: number };
@@ -46,7 +47,7 @@ export function useSquares() {
         .map((s) => s.current_publication_id)
         .filter(Boolean) as string[];
 
-      let imageMap = new Map<string, string>();
+      const imageMap = new Map<string, string>();
 
       if (pubIds.length > 0) {
         const { data: pubsData } = await supabase
@@ -63,13 +64,19 @@ export function useSquares() {
         }
       }
 
-      // 3. Merge
-      const enriched: SquareWithImage[] = squaresData.map((sq) => ({
-        ...sq,
-        image_url: sq.current_publication_id
-          ? imageMap.get(sq.current_publication_id) ?? null
-          : null,
-      })) as SquareWithImage[];
+      // 3. Merge + compute cell_id from lat/lng to ensure consistency
+      const enriched: SquareWithImage[] = squaresData.map((sq) => {
+        // Always recompute cell_id from the square's coordinates
+        // to ensure it matches the client-side grid
+        const computedCellId = cellAt(sq.lat, sq.lng).id;
+        return {
+          ...sq,
+          cell_id: sq.cell_id || computedCellId,
+          image_url: sq.current_publication_id
+            ? imageMap.get(sq.current_publication_id) ?? null
+            : null,
+        } as SquareWithImage;
+      });
 
       setSquares(enriched);
     } catch {

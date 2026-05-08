@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   Image,
   Pressable,
   ScrollView,
@@ -13,18 +12,12 @@ import { useLocalSearchParams, router } from "expo-router";
 import { supabase } from "../../src/lib/supabase";
 import { Square, SquareStatus, STATUS_COLORS } from "../../src/types/square";
 import { Publication } from "../../src/types/square";
-import CountdownTimer from "../../src/components/CountdownTimer";
-import { getSquarePrice, trackDemand } from "../../src/lib/pricing";
 import ReportButton from "../../src/components/ReportButton";
 
 const STATUS_LABELS: Record<SquareStatus, string> = {
   libre: "Libre",
-  occupe_gratuit: "Occupé (gratuit)",
-  occupe_payant: "Occupé (payant)",
-  en_expiration: "En expiration",
-  remplacable: "Remplaçable",
+  occupe: "Occupé",
   signale: "Signalé",
-  en_moderation: "En modération",
   bloque: "Bloqué",
 };
 
@@ -33,8 +26,6 @@ export default function SquareDetailScreen() {
   const [square, setSquare] = useState<Square | null>(null);
   const [publication, setPublication] = useState<Publication | null>(null);
   const [loading, setLoading] = useState(true);
-  const [dynamicPrice, setDynamicPrice] = useState<number | null>(null);
-  const [isHighDemand, setIsHighDemand] = useState(false);
 
   useEffect(() => {
     loadSquare();
@@ -65,49 +56,32 @@ export default function SquareDetailScreen() {
       if (pubData) setPublication(pubData as Publication);
     }
 
-    // Track view demand and fetch dynamic price
-    trackDemand(squareData.id, "view").catch(() => {});
-    try {
-      const priceInfo = await getSquarePrice(squareData.id);
-      setDynamicPrice(priceInfo.price);
-      setIsHighDemand(priceInfo.is_high_demand);
-    } catch {
-      // Fall back to base price
-    }
-
     setLoading(false);
+  };
+
+  const getMinPrice = (sq: Square): number => {
+    return sq.replacement_count;
   };
 
   const handleAction = () => {
     if (!square) return;
 
-    switch (square.status) {
-      case "libre":
-      case "remplacable":
-        router.push(`/upload?squareId=${square.id}`);
-        break;
-      case "occupe_gratuit":
-      case "occupe_payant":
-      case "en_expiration":
-        trackDemand(square.id, "takeover_attempt").catch(() => {});
-        Alert.alert("Bientôt", "L'achat in-app sera disponible prochainement.");
-        break;
-      default:
-        break;
+    if (square.status === "libre") {
+      router.push(`/upload?squareId=${square.id}`);
+    } else if (square.status === "occupe") {
+      const minPrice = getMinPrice(square);
+      router.push(`/upload?squareId=${square.id}&replace=true&minPrice=${minPrice}`);
     }
   };
 
-  const getActionLabel = (status: SquareStatus): string | null => {
-    switch (status) {
+  const getActionLabel = (sq: Square): string | null => {
+    switch (sq.status) {
       case "libre":
-        return "Publier";
-      case "remplacable":
-        return "Prendre cette place";
-      case "en_expiration":
-        return "Prolonger";
-      case "occupe_gratuit":
-      case "occupe_payant":
-        return "Prendre cette place";
+        return "Publier gratuitement";
+      case "occupe": {
+        const minPrice = getMinPrice(sq);
+        return `Prendre cette place — ${minPrice}€ minimum`;
+      }
       default:
         return null;
     }
@@ -129,9 +103,9 @@ export default function SquareDetailScreen() {
     );
   }
 
-  const actionLabel = getActionLabel(square.status);
-  const displayPrice = dynamicPrice ?? square.base_price;
-  const isReported = square.status === "signale" || square.status === "en_moderation";
+  const actionLabel = getActionLabel(square);
+  const isReported = square.status === "signale";
+  const minPrice = getMinPrice(square);
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
@@ -156,20 +130,17 @@ export default function SquareDetailScreen() {
         <Text style={styles.statusText}>{STATUS_LABELS[square.status]}</Text>
       </View>
 
-      {publication && <CountdownTimer expiresAt={publication.expires_at} />}
-
-      {isHighDemand && (
-        <View style={styles.demandBadge}>
-          <Text style={styles.demandText}>Ce carré est très demandé</Text>
-        </View>
-      )}
-
-      {displayPrice > 0 && (
-        <View style={styles.priceContainer}>
-          <Text style={styles.priceLabel}>Prix actuel</Text>
-          <Text style={styles.price}>{displayPrice.toFixed(2)} $</Text>
-        </View>
-      )}
+      <View style={styles.priceContainer}>
+        <Text style={styles.priceLabel}>
+          {square.status === "libre" ? "Publication" : "Prix minimum pour remplacer"}
+        </Text>
+        <Text style={styles.price}>
+          {square.status === "libre" ? "Gratuit" : `${minPrice}€`}
+        </Text>
+        {square.last_price > 0 && (
+          <Text style={styles.lastPrice}>Dernier prix payé : {square.last_price}€</Text>
+        )}
+      </View>
 
       {actionLabel && (
         <Pressable style={styles.actionButton} onPress={handleAction}>
@@ -196,16 +167,6 @@ const styles = StyleSheet.create({
   },
   statusDot: { width: 12, height: 12, borderRadius: 6, marginRight: 8 },
   statusText: { fontSize: 16, fontWeight: "600" },
-  demandBadge: {
-    backgroundColor: "#FFF8E1",
-    borderRadius: 8,
-    padding: 10,
-    marginTop: 12,
-    alignItems: "center",
-    borderWidth: 1,
-    borderColor: "#FFD54F",
-  },
-  demandText: { color: "#F57F17", fontSize: 14, fontWeight: "600" },
   priceContainer: {
     backgroundColor: "#f8f8f8",
     borderRadius: 8,
@@ -215,6 +176,7 @@ const styles = StyleSheet.create({
   },
   priceLabel: { fontSize: 12, color: "#666", marginBottom: 4 },
   price: { fontSize: 24, fontWeight: "bold" },
+  lastPrice: { fontSize: 12, color: "#999", marginTop: 4 },
   actionButton: {
     backgroundColor: "#007AFF",
     borderRadius: 8,

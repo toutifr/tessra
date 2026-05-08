@@ -22,7 +22,6 @@ interface HistoryEntry {
 
 const STATUS_LABELS: Record<string, string> = {
   active: "Actif",
-  expired: "Expiré",
   replaced: "Remplacé",
   deleted: "Supprimé",
 };
@@ -33,7 +32,7 @@ const MODE_LABELS: Record<string, string> = {
   replaced: "Remplacement",
 };
 
-type FilterType = "all" | "active" | "expired" | "replaced";
+type FilterType = "all" | "active" | "replaced";
 
 export default function HistoryScreen() {
   const [entries, setEntries] = useState<HistoryEntry[]>([]);
@@ -85,7 +84,6 @@ export default function HistoryScreen() {
   const filters: { key: FilterType; label: string }[] = [
     { key: "all", label: "Tout" },
     { key: "active", label: "Actif" },
-    { key: "expired", label: "Expiré" },
     { key: "replaced", label: "Remplacé" },
   ];
 

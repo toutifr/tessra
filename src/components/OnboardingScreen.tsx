@@ -21,12 +21,12 @@ const pages: OnboardingPage[] = [
   {
     title: "Le monde est votre toile",
     description:
-      "Tessra divise le monde en carrés géographiques. Chaque carré peut contenir une seule image, visible par tous pendant 24h.",
+      "Tessra divise le monde en carrés géographiques. Chaque carré peut contenir une seule image, visible par tous tant que personne ne la remplace.",
   },
   {
     title: "Publiez, explorez, remplacez",
     description:
-      "Trouvez un carré libre, publiez votre photo. Après 24h, le carré redevient disponible. Vous pouvez aussi payer pour prolonger ou prendre la place d'un autre.",
+      "Trouvez un carré libre, publiez votre photo gratuitement. Quelqu'un veut prendre votre place ? Il devra payer. Plus un carré change de main, plus le prix monte.",
   },
   {
     title: "Prêt à marquer votre territoire ?",

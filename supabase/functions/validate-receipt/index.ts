@@ -76,15 +76,15 @@ Deno.serve(async (req) => {
     });
   }
 
-  // Process the action
+  // Process the action — only replace_square is supported
   let publicationId: string | null = null;
 
-  if (action.type === "takeover" && action.squareId && action.imageUrl) {
-    const { data, error } = await supabase.rpc("takeover_square", {
+  if (action.type === "replace" && action.squareId && action.imageUrl) {
+    const { data, error } = await supabase.rpc("replace_square", {
       p_square_id: action.squareId,
       p_user_id: user.id,
       p_image_url: action.imageUrl,
-      p_price: action.price,
+      p_price_paid: action.price,
     });
 
     if (error) {
@@ -93,19 +93,6 @@ Deno.serve(async (req) => {
       });
     }
     publicationId = data;
-  } else if (action.type === "extend" && action.publicationId) {
-    const { error } = await supabase.rpc("extend_publication", {
-      p_publication_id: action.publicationId,
-      p_user_id: user.id,
-      p_price: action.price,
-    });
-
-    if (error) {
-      return new Response(JSON.stringify({ success: false, error: error.message }), {
-        status: 400,
-      });
-    }
-    publicationId = action.publicationId;
   }
 
   // Record payment

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
 import { supabase } from "../lib/supabase";
-import { trackDemand } from "../lib/pricing";
+
 
 const REASONS = [
   { key: "spam", label: "Spam" },
@@ -12,10 +12,10 @@ const REASONS = [
 
 interface Props {
   publicationId: string;
-  squareId: string;
+  squareId?: string;
 }
 
-export default function ReportButton({ publicationId, squareId }: Props) {
+export default function ReportButton({ publicationId }: Props) {
   const [showReasons, setShowReasons] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
@@ -34,9 +34,6 @@ export default function ReportButton({ publicationId, squareId }: Props) {
       });
 
       if (error) throw error;
-
-      // Track flag as demand signal
-      trackDemand(squareId, "flag").catch(() => {});
 
       Alert.alert("Signalement envoyé", "Merci, notre équipe va examiner ce contenu.");
       setShowReasons(false);
