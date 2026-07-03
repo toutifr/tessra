@@ -16,8 +16,8 @@ import * as Location from "expo-location";
 import { supabase } from "../src/lib/supabase";
 import { cellFromId } from "../src/lib/kmGrid";
 import { emitOptimisticUpload } from "../src/lib/tileEvents";
-import { takeSquare, InsufficientTesselsError } from "../src/lib/economy";
-import { tesselsToEur } from "../src/constants/iap";
+import { getGameState, takeSquare, InsufficientTesselsError } from "../src/lib/economy";
+import { rushPrice, tesselsToEur } from "../src/constants/iap";
 import { track } from "../src/lib/track";
 import { hapticHeavy, hapticSuccess } from "../src/lib/haptics";
 import { sectorLabel } from "../src/lib/sector";
@@ -37,8 +37,11 @@ export default function UploadScreen() {
   const [locationError, setLocationError] = useState(false);
   const [locating, setLocating] = useState(false);
   const isTake = replace === "true";
-  const minPrice = Number(minPriceParam ?? 0);
-  const [priceInput, setPriceInput] = useState(String(minPrice));
+  const baseMinPrice = Number(minPriceParam ?? 0);
+  const [rushActive, setRushActive] = useState(false);
+  // Prix effectif — remisé pendant le Rush Hour (le serveur valide de toute façon)
+  const minPrice = rushActive ? rushPrice(baseMinPrice) : baseMinPrice;
+  const [priceInput, setPriceInput] = useState(String(baseMinPrice));
   const [priceError, setPriceError] = useState<string | null>(null);
   const [successOverlay, setSuccessOverlay] = useState<{ title: string; subtitle?: string } | null>(
     null,
@@ -69,6 +72,18 @@ export default function UploadScreen() {
       requestLocation();
     }
   }, [isTake, requestLocation]);
+
+  useEffect(() => {
+    if (!isTake) return;
+    getGameState()
+      .then((gs) => {
+        if (gs.rush_active) {
+          setRushActive(true);
+          setPriceInput(String(rushPrice(baseMinPrice)));
+        }
+      })
+      .catch(() => {});
+  }, [isTake, baseMinPrice]);
 
   const pickImage = async (useCamera: boolean) => {
     try {
@@ -326,6 +341,7 @@ export default function UploadScreen() {
             <View style={styles.priceSection}>
               <Text style={[styles.priceLabel, { color: c.textSecondary }]}>
                 Prix minimum : {minPrice} ⬡ ({tesselsToEur(minPrice)})
+                {rushActive ? " · 🔥 Rush Hour −50 %" : ""}
               </Text>
               <TextInput
                 style={[

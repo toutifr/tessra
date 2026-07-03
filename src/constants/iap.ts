@@ -26,6 +26,14 @@ export function minTakePrice(lastPrice: number): number {
 }
 
 /**
+ * Prix pendant le Rush Hour : −50 % (miroir serveur).
+ * À appliquer sur le résultat de minTakePrice.
+ */
+export function rushPrice(minPrice: number): number {
+  return Math.max(100, Math.ceil((minPrice * 0.5) / 10) * 10);
+}
+
+/**
  * Équivalent € d'un montant en Tessels (conformité UE / principes CPC :
  * prix réel affiché à côté du prix en monnaie virtuelle).
  * Base : taux du plus petit pack (le plus défavorable) = 2,99 € / 300 ⬡.

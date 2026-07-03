@@ -5,8 +5,10 @@ import * as Location from "expo-location";
 import { router } from "expo-router";
 import { MAPBOX_ACCESS_TOKEN } from "../../src/constants/config";
 import { cellAt, cellFromId } from "../../src/lib/kmGrid";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import GridLayer from "../../src/components/GridLayer";
 import TileLayer from "../../src/components/TileLayer";
+import RushBanner from "../../src/components/RushBanner";
 import { useSquares, SquareWithImage } from "../../src/hooks/useSquares";
 import { onOptimisticUpload, type OptimisticUpload } from "../../src/lib/tileEvents";
 import { supabase } from "../../src/lib/supabase";
@@ -59,6 +61,7 @@ export default function MapScreen() {
   const [meId, setMeId] = useState<string | null>(null);
   const [styleJSON, setStyleJSON] = useState<string | null>(null);
   const { squares, fetchSquaresInViewport } = useSquares();
+  const insets = useSafeAreaInsets();
   const cameraRef = useRef<MapboxGL.Camera>(null);
   const mapViewRef = useRef<MapboxGL.MapView>(null);
   const squaresRef = useRef<SquareWithImage[]>([]);
@@ -277,6 +280,11 @@ export default function MapScreen() {
         {/* User location marker — rendered last so it's on top of all layers */}
         {userLocation && <MapboxGL.UserLocation visible />}
       </MapboxGL.MapView>
+
+      {/* Bannière Rush Hour — overlay sous la safe area */}
+      <View style={[styles.rushOverlay, { top: insets.top + 8 }]} pointerEvents="none">
+        <RushBanner />
+      </View>
     </View>
   );
 }
@@ -285,4 +293,5 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   map: { flex: 1 },
   loading: { flex: 1, justifyContent: "center", alignItems: "center" },
+  rushOverlay: { position: "absolute", left: 12, right: 12 },
 });

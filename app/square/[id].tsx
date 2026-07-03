@@ -17,8 +17,8 @@ import ReportButton from "../../src/components/ReportButton";
 import { useVote } from "../../src/hooks/useVote";
 import { useShield } from "../../src/hooks/useShield";
 import { useFollow } from "../../src/hooks/useFollow";
-import { minTakePrice, tesselsToEur } from "../../src/constants/iap";
-import { fortifySquare, InsufficientTesselsError } from "../../src/lib/economy";
+import { minTakePrice, rushPrice, tesselsToEur } from "../../src/constants/iap";
+import { fortifySquare, getGameState, InsufficientTesselsError } from "../../src/lib/economy";
 import { track } from "../../src/lib/track";
 import { hapticLight, hapticSuccess } from "../../src/lib/haptics";
 import { sectorLabel } from "../../src/lib/sector";
@@ -43,6 +43,7 @@ export default function SquareDetailScreen() {
   const [isFollowingOwner, setIsFollowingOwner] = useState(false);
   const [history, setHistory] = useState<Publication[]>([]);
   const [fortifying, setFortifying] = useState(false);
+  const [rushActive, setRushActive] = useState(false);
   const c = useThemeColors();
 
   const { vote, voting } = useVote();
@@ -52,6 +53,9 @@ export default function SquareDetailScreen() {
   useEffect(() => {
     loadSquare();
     loadCurrentUser();
+    getGameState()
+      .then((gs) => setRushActive(gs.rush_active))
+      .catch(() => {});
   }, [id]);
 
   const loadCurrentUser = async () => {
@@ -117,8 +121,14 @@ export default function SquareDetailScreen() {
     setLoading(false);
   };
 
-  const getMinPrice = (sq: Square): number => {
+  const getBasePrice = (sq: Square): number => {
     return minTakePrice(sq.last_price ?? 0);
+  };
+
+  /** Prix effectif — remisé pendant le Rush Hour */
+  const getMinPrice = (sq: Square): number => {
+    const base = getBasePrice(sq);
+    return rushActive ? rushPrice(base) : base;
   };
 
   const handleAction = () => {
@@ -130,8 +140,8 @@ export default function SquareDetailScreen() {
     if (square.status === "libre") {
       router.push(`/upload?squareId=${square.id}`);
     } else if (square.status === "occupe") {
-      const minPrice = getMinPrice(square);
-      router.push(`/upload?squareId=${square.id}&replace=true&minPrice=${minPrice}`);
+      // On passe le prix de base : upload.tsx applique lui-même la remise rush
+      router.push(`/upload?squareId=${square.id}&replace=true&minPrice=${getBasePrice(square)}`);
     }
   };
 
@@ -320,9 +330,21 @@ export default function SquareDetailScreen() {
         <Text style={[styles.priceLabel, { color: c.textSecondary }]}>
           {square.status === "libre" ? "Publication" : "Prix minimum"}
         </Text>
-        <Text style={[styles.price, { color: c.text }]}>
-          {square.status === "libre" ? "Gratuit" : `${minPrice} ⬡`}
-        </Text>
+        {square.status !== "libre" && rushActive ? (
+          <View style={styles.rushPriceRow}>
+            <Text style={[styles.oldPrice, { color: c.textTertiary }]}>
+              {getBasePrice(square)} ⬡
+            </Text>
+            <Text style={[styles.price, { color: c.text }]}>{minPrice} ⬡</Text>
+            <View style={styles.rushBadge}>
+              <Text style={styles.rushBadgeText}>🔥 −50 %</Text>
+            </View>
+          </View>
+        ) : (
+          <Text style={[styles.price, { color: c.text }]}>
+            {square.status === "libre" ? "Gratuit" : `${minPrice} ⬡`}
+          </Text>
+        )}
         {square.status !== "libre" && (
           <Text style={[styles.priceDetail, { color: c.textTertiary }]}>
             {tesselsToEur(minPrice)}
@@ -524,6 +546,19 @@ const styles = StyleSheet.create({
   },
   priceLabel: { fontSize: fonts.sizes.xs, marginBottom: spacing.xs },
   price: { fontSize: fonts.sizes.xxl, fontWeight: fonts.weights.heavy },
+  rushPriceRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
+  oldPrice: {
+    fontSize: fonts.sizes.md,
+    fontWeight: fonts.weights.semibold,
+    textDecorationLine: "line-through",
+  },
+  rushBadge: {
+    backgroundColor: "#FF6B35",
+    borderRadius: radii.full,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 3,
+  },
+  rushBadgeText: { color: "#fff", fontSize: fonts.sizes.xs, fontWeight: fonts.weights.bold },
   priceDetail: { fontSize: fonts.sizes.xs, marginTop: spacing.xs },
 
   actionButton: {

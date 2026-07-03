@@ -13,6 +13,7 @@ import {
 import { router } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import { supabase } from "../../src/lib/supabase";
+import { getTeamChallenge } from "../../src/lib/economy";
 import { useUserStats } from "../../src/hooks/useUserStats";
 import AnimatedNumber from "../../src/components/AnimatedNumber";
 import { useThemeColors, fonts, spacing, radii, shadows, palette, ThemeColors } from "../../src/theme";
@@ -29,6 +30,7 @@ export default function ProfileScreen() {
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
   const [newUsername, setNewUsername] = useState("");
+  const [team, setTeam] = useState<{ emoji: string; name: string } | null>(null);
   const { stats, loading: statsLoading, refetch: refetchStats } = useUserStats();
   const c = useThemeColors();
 
@@ -54,6 +56,14 @@ export default function ProfileScreen() {
     }
 
     setLoading(false);
+
+    // Team (non bloquant)
+    try {
+      const ch = await getTeamChallenge(user.id);
+      if (ch.my_team) setTeam({ emoji: ch.my_team.emoji, name: ch.my_team.name });
+    } catch {
+      // silencieux
+    }
   };
 
   const handleUpdateUsername = async () => {
@@ -179,6 +189,14 @@ export default function ProfileScreen() {
           </Pressable>
         )}
 
+        {team && (
+          <View style={[styles.teamBadge, { backgroundColor: c.primarySoft }]}>
+            <Text style={[styles.teamBadgeText, { color: c.primary }]}>
+              {team.emoji} {team.name}
+            </Text>
+          </View>
+        )}
+
         <Text style={[styles.joinDate, { color: c.textTertiary }]}>Membre depuis {joinDate}</Text>
       </View>
 
@@ -280,6 +298,12 @@ const styles = StyleSheet.create({
   saveButton: { borderRadius: radii.sm, padding: spacing.sm, paddingHorizontal: spacing.base },
   saveText: { fontWeight: fonts.weights.semibold },
   joinDate: { fontSize: fonts.sizes.sm, marginTop: spacing.xs },
+  teamBadge: {
+    borderRadius: radii.full,
+    paddingHorizontal: spacing.md, paddingVertical: spacing.xs + 2,
+    marginTop: spacing.sm,
+  },
+  teamBadgeText: { fontSize: fonts.sizes.sm, fontWeight: fonts.weights.semibold },
 
   creditsCard: {
     flexDirection: "row", alignItems: "center", justifyContent: "center",

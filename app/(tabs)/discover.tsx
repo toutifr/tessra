@@ -1,27 +1,38 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Dimensions,
   FlatList,
   Image,
   Pressable,
   RefreshControl,
+  ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from "react-native";
 import { router } from "expo-router";
 import { supabase } from "../../src/lib/supabase";
 import {
   claimQuest,
+  createTeam,
   DailyQuest,
   FeedItem,
   getDailyQuests,
   getFeed,
   getLeaderboard,
+  getTeamChallenge,
+  joinTeam,
+  leaveTeam,
   LeaderboardKind,
   LeaderboardRow,
+  listTeams,
+  TeamChallenge,
+  TeamRow,
 } from "../../src/lib/economy";
+import RushBanner from "../../src/components/RushBanner";
 import { track } from "../../src/lib/track";
 import { hapticLight, hapticSuccess } from "../../src/lib/haptics";
 import { useThemeColors, fonts, spacing, radii, shadows, palette, ThemeColors } from "../../src/theme";
@@ -45,9 +56,20 @@ const LEADERBOARD_KINDS: { kind: LeaderboardKind; label: string }[] = [
   { kind: "explorer", label: "Explorateur" },
 ];
 
+const TEAM_EMOJIS = ["⬡", "🔥", "🌍", "🚀", "🦅", "🐺", "🌊", "⚡"];
+
+function remainingLabel(iso: string): string {
+  const diff = new Date(iso).getTime() - Date.now();
+  if (diff <= 0) return "terminé";
+  const h = Math.floor(diff / 3600000);
+  if (h >= 24) return `${Math.floor(h / 24)} j ${h % 24} h`;
+  const m = Math.floor((diff % 3600000) / 60000);
+  return `${h} h ${m} min`;
+}
+
 export default function DiscoverScreen() {
   const c = useThemeColors();
-  const [tab, setTab] = useState<"feed" | "leaderboard">("feed");
+  const [tab, setTab] = useState<"feed" | "leaderboard" | "team">("feed");
   const [userId, setUserId] = useState<string | null>(null);
 
   // Feed
@@ -65,6 +87,15 @@ export default function DiscoverScreen() {
   const [lbKind, setLbKind] = useState<LeaderboardKind>("tiles");
   const [lbRows, setLbRows] = useState<LeaderboardRow[]>([]);
   const [lbLoading, setLbLoading] = useState(false);
+
+  // Team
+  const [challenge, setChallenge] = useState<TeamChallenge | null>(null);
+  const [teams, setTeams] = useState<TeamRow[]>([]);
+  const [teamLoading, setTeamLoading] = useState(false);
+  const [teamBusy, setTeamBusy] = useState(false);
+  const [showCreateForm, setShowCreateForm] = useState(false);
+  const [teamName, setTeamName] = useState("");
+  const [teamEmoji, setTeamEmoji] = useState(TEAM_EMOJIS[0]);
 
   useEffect(() => {
     track("feed_open");
@@ -177,6 +208,82 @@ export default function DiscoverScreen() {
   useEffect(() => {
     if (tab === "leaderboard") loadLeaderboard(lbKind);
   }, [tab, lbKind, loadLeaderboard]);
+
+  // ─── Team ───────────────────────────────────────────────
+
+  const loadTeam = useCallback(async (uid: string) => {
+    setTeamLoading(true);
+    try {
+      const ch = await getTeamChallenge(uid);
+      setChallenge(ch);
+      if (!ch.my_team) setTeams(await listTeams());
+      track("team_challenge_view");
+    } catch {
+      // silencieux
+    } finally {
+      setTeamLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (tab === "team" && userId) loadTeam(userId);
+  }, [tab, userId, loadTeam]);
+
+  const handleCreateTeam = async () => {
+    const name = teamName.trim();
+    if (!userId || !name || teamBusy) return;
+    setTeamBusy(true);
+    try {
+      await createTeam(userId, name, teamEmoji);
+      hapticSuccess();
+      track("team_create", { name, emoji: teamEmoji });
+      setShowCreateForm(false);
+      setTeamName("");
+      await loadTeam(userId);
+    } catch (e) {
+      Alert.alert("Erreur", e instanceof Error ? e.message : "Impossible de créer la team");
+    } finally {
+      setTeamBusy(false);
+    }
+  };
+
+  const handleJoinTeam = async (team: TeamRow) => {
+    if (!userId || teamBusy) return;
+    setTeamBusy(true);
+    try {
+      await joinTeam(userId, team.id);
+      hapticSuccess();
+      track("team_join", { team_id: team.id });
+      await loadTeam(userId);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "";
+      Alert.alert(
+        "Erreur",
+        msg.includes("Already in a team") ? "Tu es déjà dans une team." : "Impossible de rejoindre la team",
+      );
+    } finally {
+      setTeamBusy(false);
+    }
+  };
+
+  const handleLeaveTeam = () => {
+    if (!userId) return;
+    Alert.alert("Quitter la team", "Tu perdras ta contribution au défi en cours. Continuer ?", [
+      { text: "Annuler", style: "cancel" },
+      {
+        text: "Quitter",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await leaveTeam(userId);
+            await loadTeam(userId);
+          } catch {
+            // silencieux
+          }
+        },
+      },
+    ]);
+  };
 
   const renderCard = ({ item }: { item: FeedItem }) => {
     const canVote = !item.has_voted && item.owner_id !== userId;
@@ -305,6 +412,7 @@ export default function DiscoverScreen() {
         {([
           { key: "feed" as const, label: "Feed" },
           { key: "leaderboard" as const, label: "Classement" },
+          { key: "team" as const, label: "Team" },
         ]).map((s) => (
           <Pressable
             key={s.key}
@@ -336,7 +444,12 @@ export default function DiscoverScreen() {
             data={feed}
             keyExtractor={(item) => item.publication_id}
             renderItem={renderCard}
-            ListHeaderComponent={questsBanner}
+            ListHeaderComponent={
+              <View>
+                <RushBanner style={{ marginHorizontal: spacing.base, marginBottom: spacing.md }} />
+                {questsBanner}
+              </View>
+            }
             ListEmptyComponent={
               <Text style={[styles.emptyText, { color: c.textTertiary }]}>
                 Rien à découvrir pour l'instant. Reviens plus tard !
@@ -353,7 +466,7 @@ export default function DiscoverScreen() {
             contentContainerStyle={styles.feedContent}
           />
         )
-      ) : (
+      ) : tab === "leaderboard" ? (
         <View style={styles.leaderboardContainer}>
           {/* Sous-segments */}
           <View style={styles.lbSegments}>
@@ -400,6 +513,182 @@ export default function DiscoverScreen() {
             />
           )}
         </View>
+      ) : teamLoading && !challenge ? (
+        <View style={styles.loading}>
+          <ActivityIndicator size="large" color={c.primary} />
+        </View>
+      ) : challenge?.my_team ? (
+        // ─── Avec team ───
+        <ScrollView contentContainerStyle={styles.teamContent}>
+          <View style={[styles.teamHeader, { backgroundColor: c.bgSecondary, borderColor: c.cardBorder }]}>
+            <Text style={styles.teamHeaderEmoji}>{challenge.my_team.emoji}</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.teamHeaderName, { color: c.text }]} numberOfLines={1}>
+                {challenge.my_team.name}
+              </Text>
+              <Text style={[styles.teamHeaderMeta, { color: c.textTertiary }]}>
+                {challenge.my_team.member_count} membre{challenge.my_team.member_count > 1 ? "s" : ""} · rang #{challenge.my_team.rank}
+              </Text>
+            </View>
+          </View>
+
+          {/* Défi de la semaine */}
+          <View style={[styles.challengeCard, { backgroundColor: c.primarySoft }]}>
+            <Text style={[styles.challengeLabel, { color: c.text }]}>{challenge.label}</Text>
+            <View style={styles.challengeStats}>
+              <View style={styles.challengeStat}>
+                <Text style={[styles.challengeValue, { color: c.primary }]}>{challenge.my_team.score}</Text>
+                <Text style={[styles.challengeStatLabel, { color: c.textSecondary }]}>Score</Text>
+              </View>
+              <View style={styles.challengeStat}>
+                <Text style={[styles.challengeValue, { color: c.primary }]}>#{challenge.my_team.rank}</Text>
+                <Text style={[styles.challengeStatLabel, { color: c.textSecondary }]}>Rang</Text>
+              </View>
+              <View style={styles.challengeStat}>
+                <Text style={[styles.challengeValue, { color: c.primary }]}>{remainingLabel(challenge.ends_at)}</Text>
+                <Text style={[styles.challengeStatLabel, { color: c.textSecondary }]}>Restant</Text>
+              </View>
+            </View>
+            <Text style={[styles.podiumHint, { color: c.textSecondary }]}>
+              Podium lundi : +200/+100/+50 ⬡ par membre
+            </Text>
+          </View>
+
+          {/* Top 10 */}
+          <Text style={[styles.teamSectionTitle, { color: c.text }]}>Top 10</Text>
+          {challenge.top.map((t) => {
+            const isMine = t.team_id === challenge.my_team!.team_id;
+            return (
+              <View
+                key={t.team_id}
+                style={[
+                  styles.teamRow,
+                  { borderBottomColor: c.separator },
+                  isMine && { backgroundColor: c.primarySoft, borderRadius: radii.sm },
+                ]}
+              >
+                <Text style={[styles.lbRank, { color: t.rank <= 3 ? palette.gold : c.textSecondary }]}>
+                  {t.rank}
+                </Text>
+                <Text style={styles.teamRowEmoji}>{t.emoji}</Text>
+                <Text
+                  style={[
+                    styles.teamRowName,
+                    { color: c.text, fontWeight: isMine ? fonts.weights.bold : fonts.weights.medium },
+                  ]}
+                  numberOfLines={1}
+                >
+                  {t.name}
+                  {isMine ? " (ta team)" : ""}
+                </Text>
+                <Text style={[styles.teamRowMembers, { color: c.textTertiary }]}>{t.member_count} 👤</Text>
+                <Text style={[styles.lbValue, { color: c.primary }]}>{t.score}</Text>
+              </View>
+            );
+          })}
+
+          <Pressable style={styles.leaveButton} onPress={handleLeaveTeam}>
+            <Text style={[styles.leaveText, { color: c.textTertiary }]}>Quitter la team</Text>
+          </Pressable>
+        </ScrollView>
+      ) : (
+        // ─── Sans team ───
+        <ScrollView contentContainerStyle={styles.teamContent}>
+          <View style={[styles.introCard, { backgroundColor: c.primarySoft }]}>
+            <Text style={styles.introEmoji}>⬡</Text>
+            <Text style={[styles.introTitle, { color: c.text }]}>Unissez-vous pour remplir la mosaïque</Text>
+            <Text style={[styles.introText, { color: c.textSecondary }]}>
+              Rejoins une team, cumulez vos prises et grimpez au classement hebdo. Podium lundi :
+              +200/+100/+50 ⬡ par membre.
+            </Text>
+          </View>
+
+          {showCreateForm ? (
+            <View style={[styles.createForm, { backgroundColor: c.bgSecondary, borderColor: c.cardBorder }]}>
+              <TextInput
+                style={[
+                  styles.teamInput,
+                  { backgroundColor: c.inputBg, borderColor: c.inputBorder, color: c.text },
+                ]}
+                value={teamName}
+                onChangeText={setTeamName}
+                placeholder="Nom de la team"
+                placeholderTextColor={c.textTertiary}
+                maxLength={24}
+                autoFocus
+              />
+              <View style={styles.emojiRow}>
+                {TEAM_EMOJIS.map((e) => (
+                  <Pressable
+                    key={e}
+                    style={[
+                      styles.emojiChoice,
+                      { backgroundColor: teamEmoji === e ? c.primary : c.bgTertiary },
+                    ]}
+                    onPress={() => setTeamEmoji(e)}
+                  >
+                    <Text style={styles.emojiChoiceText}>{e}</Text>
+                  </Pressable>
+                ))}
+              </View>
+              <View style={styles.createActions}>
+                <Pressable
+                  style={[styles.createCancel, { borderColor: c.border }]}
+                  onPress={() => setShowCreateForm(false)}
+                >
+                  <Text style={{ color: c.textSecondary, fontWeight: fonts.weights.medium }}>Annuler</Text>
+                </Pressable>
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.createConfirm,
+                    {
+                      backgroundColor: c.primary,
+                      opacity: pressed || teamBusy || !teamName.trim() ? 0.6 : 1,
+                    },
+                  ]}
+                  onPress={handleCreateTeam}
+                  disabled={teamBusy || !teamName.trim()}
+                >
+                  <Text style={{ color: c.primaryText, fontWeight: fonts.weights.bold }}>Créer</Text>
+                </Pressable>
+              </View>
+            </View>
+          ) : (
+            <Pressable
+              style={({ pressed }) => [
+                styles.createTeamButton,
+                { backgroundColor: c.primary, opacity: pressed ? 0.85 : 1 },
+                shadows.md,
+              ]}
+              onPress={() => setShowCreateForm(true)}
+            >
+              <Text style={[styles.createTeamText, { color: c.primaryText }]}>Créer une team</Text>
+            </Pressable>
+          )}
+
+          {teams.length > 0 && (
+            <Text style={[styles.teamSectionTitle, { color: c.text }]}>Rejoindre une team</Text>
+          )}
+          {teams.map((t) => (
+            <View key={t.id} style={[styles.teamRow, { borderBottomColor: c.separator }]}>
+              <Text style={styles.teamRowEmoji}>{t.emoji}</Text>
+              <Text style={[styles.teamRowName, { color: c.text }]} numberOfLines={1}>
+                {t.name}
+              </Text>
+              <Text style={[styles.teamRowMembers, { color: c.textTertiary }]}>{t.member_count} 👤</Text>
+              <Pressable
+                style={({ pressed }) => [
+                  styles.joinButton,
+                  { backgroundColor: c.primary, opacity: pressed || teamBusy ? 0.7 : 1 },
+                ]}
+                onPress={() => handleJoinTeam(t)}
+                disabled={teamBusy}
+              >
+                <Text style={[styles.joinText, { color: c.primaryText }]}>Rejoindre</Text>
+              </Pressable>
+            </View>
+          ))}
+        </ScrollView>
       )}
     </View>
   );
@@ -571,4 +860,87 @@ const styles = StyleSheet.create({
   lbAvatarInitial: { color: "#fff", fontSize: fonts.sizes.sm, fontWeight: fonts.weights.bold },
   lbUsername: { flex: 1, fontSize: fonts.sizes.base },
   lbValue: { fontSize: fonts.sizes.base, fontWeight: fonts.weights.bold },
+
+  // ─── Team ───
+  teamContent: { paddingHorizontal: spacing.base, paddingBottom: 40 },
+  introCard: {
+    borderRadius: radii.lg, padding: spacing.lg, alignItems: "center",
+    marginBottom: spacing.base,
+  },
+  introEmoji: { fontSize: 40, marginBottom: spacing.sm },
+  introTitle: {
+    fontSize: fonts.sizes.lg, fontWeight: fonts.weights.bold,
+    textAlign: "center", marginBottom: spacing.sm,
+  },
+  introText: {
+    fontSize: fonts.sizes.sm, textAlign: "center",
+    lineHeight: fonts.sizes.sm * fonts.lineHeights.relaxed,
+  },
+  createTeamButton: {
+    borderRadius: radii.md, padding: spacing.base, alignItems: "center",
+    marginBottom: spacing.lg,
+  },
+  createTeamText: { fontSize: fonts.sizes.base, fontWeight: fonts.weights.semibold },
+  createForm: {
+    borderRadius: radii.md, borderWidth: 1, padding: spacing.md,
+    marginBottom: spacing.lg, gap: spacing.md,
+  },
+  teamInput: {
+    borderWidth: 1, borderRadius: radii.sm, padding: spacing.md,
+    fontSize: fonts.sizes.base,
+  },
+  emojiRow: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
+  emojiChoice: {
+    width: 40, height: 40, borderRadius: radii.sm,
+    justifyContent: "center", alignItems: "center",
+  },
+  emojiChoiceText: { fontSize: 20 },
+  createActions: { flexDirection: "row", justifyContent: "flex-end", gap: spacing.sm },
+  createCancel: {
+    borderWidth: 1, borderRadius: radii.sm,
+    paddingHorizontal: spacing.base, paddingVertical: spacing.sm,
+  },
+  createConfirm: {
+    borderRadius: radii.sm,
+    paddingHorizontal: spacing.lg, paddingVertical: spacing.sm,
+  },
+  teamSectionTitle: {
+    fontSize: fonts.sizes.md, fontWeight: fonts.weights.bold,
+    marginBottom: spacing.sm,
+  },
+  teamRow: {
+    flexDirection: "row", alignItems: "center", gap: spacing.md,
+    paddingVertical: spacing.md, paddingHorizontal: spacing.sm,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  teamRowEmoji: { fontSize: 22 },
+  teamRowName: { flex: 1, fontSize: fonts.sizes.base, fontWeight: fonts.weights.medium },
+  teamRowMembers: { fontSize: fonts.sizes.sm },
+  joinButton: {
+    borderRadius: radii.full,
+    paddingHorizontal: spacing.md, paddingVertical: spacing.xs + 2,
+  },
+  joinText: { fontSize: fonts.sizes.sm, fontWeight: fonts.weights.semibold },
+  teamHeader: {
+    flexDirection: "row", alignItems: "center", gap: spacing.md,
+    borderRadius: radii.md, borderWidth: 1, padding: spacing.md,
+    marginBottom: spacing.md,
+  },
+  teamHeaderEmoji: { fontSize: 32 },
+  teamHeaderName: { fontSize: fonts.sizes.lg, fontWeight: fonts.weights.bold },
+  teamHeaderMeta: { fontSize: fonts.sizes.sm, marginTop: 2 },
+  challengeCard: {
+    borderRadius: radii.lg, padding: spacing.lg, marginBottom: spacing.lg,
+  },
+  challengeLabel: {
+    fontSize: fonts.sizes.base, fontWeight: fonts.weights.bold,
+    textAlign: "center", marginBottom: spacing.md,
+  },
+  challengeStats: { flexDirection: "row", justifyContent: "space-around", marginBottom: spacing.md },
+  challengeStat: { alignItems: "center" },
+  challengeValue: { fontSize: fonts.sizes.lg, fontWeight: fonts.weights.heavy },
+  challengeStatLabel: { fontSize: fonts.sizes.xs, marginTop: 2 },
+  podiumHint: { fontSize: fonts.sizes.xs, textAlign: "center" },
+  leaveButton: { alignItems: "center", marginTop: spacing.lg, padding: spacing.sm },
+  leaveText: { fontSize: fonts.sizes.sm },
 });

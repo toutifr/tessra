@@ -49,7 +49,99 @@ export interface DailyQuest {
   claimed: boolean;
 }
 
+export interface GameState {
+  rush_active: boolean;
+  rush_ends_at: string | null;
+  next_rush_at: string;
+}
+
+export interface TeamRow {
+  id: string;
+  name: string;
+  emoji: string;
+  color: string;
+  member_count: number;
+}
+
+export interface TeamChallengeTeam {
+  rank: number;
+  team_id: string;
+  name: string;
+  emoji: string;
+  member_count: number;
+  score: number;
+}
+
+export interface TeamChallenge {
+  kind: 0 | 1 | 2;
+  label: string;
+  week_start: string;
+  ends_at: string;
+  top: TeamChallengeTeam[];
+  my_team: {
+    team_id: string;
+    name: string;
+    emoji: string;
+    member_count: number;
+    score: number;
+    rank: number;
+  } | null;
+}
+
 // ─── Helpers ──────────────────────────────────────────────
+
+export async function getGameState(): Promise<GameState> {
+  const { data, error } = await supabase.rpc("get_game_state");
+  if (error) throw error;
+  return data as GameState;
+}
+
+export async function createTeam(
+  userId: string,
+  name: string,
+  emoji: string,
+  color = "#FF6B6B",
+): Promise<string> {
+  const { data, error } = await supabase.rpc("create_team", {
+    p_user_id: userId,
+    p_name: name,
+    p_emoji: emoji,
+    p_color: color,
+  });
+  if (error) throw error;
+  return data as string;
+}
+
+export async function joinTeam(userId: string, teamId: string): Promise<void> {
+  const { error } = await supabase.rpc("join_team", {
+    p_user_id: userId,
+    p_team_id: teamId,
+  });
+  if (error) throw error;
+}
+
+export async function leaveTeam(userId: string): Promise<void> {
+  const { error } = await supabase.rpc("leave_team", { p_user_id: userId });
+  if (error) throw error;
+}
+
+export async function getTeamChallenge(userId: string): Promise<TeamChallenge> {
+  const { data, error } = await supabase.rpc("get_team_challenge", {
+    p_user_id: userId,
+  });
+  if (error) throw error;
+  return data as TeamChallenge;
+}
+
+export async function listTeams(limit = 50): Promise<TeamRow[]> {
+  const { data, error } = await supabase
+    .from("teams")
+    .select("id, name, emoji, color, member_count")
+    .order("member_count", { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  return (data ?? []) as TeamRow[];
+}
 
 export async function getBalance(userId: string): Promise<number> {
   const { data, error } = await supabase
