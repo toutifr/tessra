@@ -277,8 +277,13 @@ export default function MapScreen() {
           );
         })()}
 
-        {/* User location marker — rendered last so it's on top of all layers */}
-        {userLocation && <MapboxGL.UserLocation visible />}
+        {/* Point bleu de position — renderMode "native" : le puck est dessiné par le
+            composant de localisation natif, TOUJOURS au-dessus de toutes les couches
+            (tuiles photos, grille, outlines), contrairement au mode JS dont les
+            CircleLayers peuvent être recouverts par les layers insérés après coup. */}
+        {userLocation && (
+          <MapboxGL.UserLocation visible renderMode="native" androidRenderMode="normal" />
+        )}
       </MapboxGL.MapView>
 
       {/* Bannière Rush Hour — overlay sous la safe area */}
