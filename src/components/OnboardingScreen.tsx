@@ -36,7 +36,7 @@ const pages: OnboardingPage[] = [
     icon: "shield-half-outline",
     title: "Tout se prend, rien n'est acquis",
     description:
-      "On peut racheter ta case. Tu récupères 50 % en Tessels ⬡ — et tu peux la reprendre d'où tu veux.",
+      "On peut racheter ta case. Tu récupères 50 % en Reis ⬡ — et tu peux la reprendre d'où tu veux.",
   },
   {
     icon: "sparkles-outline",

@@ -61,7 +61,7 @@ export default function PaywallScreen() {
       setBalance(newBalance);
       track("purchase_success", { sku });
       Alert.alert(
-        "Tessels ajoutés !",
+        "Reis ajoutés !",
         `Ton nouveau solde : ${newBalance} ⬡`,
         [{ text: "OK", onPress: () => router.back() }],
       );
@@ -81,7 +81,7 @@ export default function PaywallScreen() {
       style={[styles.container, { backgroundColor: c.bg }]}
       contentContainerStyle={styles.content}
     >
-      <Text style={[styles.title, { color: c.text }]}>Recharge tes Tessels</Text>
+      <Text style={[styles.title, { color: c.text }]}>Recharge tes Reis</Text>
 
       <View style={[styles.balanceCard, { backgroundColor: c.primarySoft }]}>
         <Text style={[styles.balanceLabel, { color: c.textSecondary }]}>Solde actuel</Text>

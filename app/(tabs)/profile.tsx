@@ -200,7 +200,7 @@ export default function ProfileScreen() {
         <Text style={[styles.joinDate, { color: c.textTertiary }]}>Membre depuis {joinDate}</Text>
       </View>
 
-      {/* Solde Tessels */}
+      {/* Solde Reis */}
       <View style={[styles.creditsCard, { backgroundColor: c.primarySoft }, shadows.md]}>
         <View style={styles.creditsMain}>
           <AnimatedNumber
@@ -208,7 +208,7 @@ export default function ProfileScreen() {
             suffix=" ⬡"
             style={[styles.creditsNumber, { color: c.primary }]}
           />
-          <Text style={[styles.creditsLabel, { color: c.textSecondary }]}>Tessels</Text>
+          <Text style={[styles.creditsLabel, { color: c.textSecondary }]}>Reis</Text>
         </View>
         <Pressable
           style={({ pressed }) => [

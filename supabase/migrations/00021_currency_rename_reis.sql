@@ -1,0 +1,5 @@
+-- Monnaie renommée : Tessels → Reis (libellés push uniquement).
+-- Identifiants techniques inchangés (SKUs tessra_tessels_*, INSUFFICIENT_TESSELS, grant_tessels).
+-- Recrée notify_publication_replaced, les crons rush-warn/rush-start et
+-- award_weekly_team_challenge avec "Reis" dans les textes (voir historique Supabase
+-- ou 00017/00020 pour les corps complets — seules les chaînes changent).

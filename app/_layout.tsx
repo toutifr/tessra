@@ -68,7 +68,7 @@ function RootLayoutInner() {
         options={{
           presentation: "modal",
           headerShown: true,
-          title: "Tessels",
+          title: "Reis",
           headerStyle: { backgroundColor: c.bg },
           headerTintColor: c.text,
         }}
