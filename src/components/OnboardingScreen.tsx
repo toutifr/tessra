@@ -9,6 +9,8 @@ import {
   Text,
   View,
 } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
+import * as Location from "expo-location";
 import { useThemeColors, fonts, spacing, radii } from "../theme";
 
 const { width } = Dimensions.get("window");
@@ -16,26 +18,30 @@ const { width } = Dimensions.get("window");
 interface OnboardingPage {
   title: string;
   description: string;
-  emoji: string;
+  icon: keyof typeof Ionicons.glyphMap;
 }
 
 const pages: OnboardingPage[] = [
   {
-    emoji: "🗺️",
-    title: "Le monde est votre toile",
-    description:
-      "Tessra divise le monde en carrés géographiques. Chaque carré peut contenir une seule image, visible par tous tant que personne ne la remplace.",
+    icon: "grid-outline",
+    title: "Le monde est une mosaïque",
+    description: "Chaque km² de la planète est une case. Une seule photo par case.",
   },
   {
-    emoji: "📸",
-    title: "Publiez, explorez, remplacez",
-    description:
-      "Trouvez un carré libre, publiez votre photo gratuitement. Quelqu'un veut prendre votre place ? Il devra payer. Plus un carré change de main, plus le prix monte.",
+    icon: "location-outline",
+    title: "Sois là, c'est à toi",
+    description: "Tu es dans une case ? Publie ta photo, gratuitement. Il faut y être, vraiment.",
   },
   {
-    emoji: "🚀",
-    title: "Prêt à marquer votre territoire ?",
-    description: "Explorez la carte autour de vous et publiez votre première image.",
+    icon: "shield-half-outline",
+    title: "Tout se prend, rien n'est acquis",
+    description:
+      "On peut racheter ta case. Tu récupères 50 % en Tessels ⬡ — et tu peux la reprendre d'où tu veux.",
+  },
+  {
+    icon: "sparkles-outline",
+    title: "100 ⬡ offerts",
+    description: "De quoi faire ta première conquête.",
   },
 ];
 
@@ -45,12 +51,25 @@ interface Props {
 
 export default function OnboardingScreen({ onComplete }: Props) {
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [finishing, setFinishing] = useState(false);
   const flatListRef = useRef<FlatList>(null);
   const c = useThemeColors();
 
   const handleScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
     const index = Math.round(e.nativeEvent.contentOffset.x / width);
     setCurrentIndex(index);
+  };
+
+  const handleFinish = async () => {
+    if (finishing) return;
+    setFinishing(true);
+    try {
+      // Demande la permission de localisation — un refus ne bloque pas
+      await Location.requestForegroundPermissionsAsync();
+    } catch {
+      // silencieux
+    }
+    onComplete();
   };
 
   const isLastPage = currentIndex === pages.length - 1;
@@ -72,7 +91,9 @@ export default function OnboardingScreen({ onComplete }: Props) {
         keyExtractor={(_, i) => String(i)}
         renderItem={({ item }) => (
           <View style={styles.page}>
-            <Text style={styles.emoji}>{item.emoji}</Text>
+            <View style={[styles.iconCircle, { backgroundColor: c.primarySoft }]}>
+              <Ionicons name={item.icon} size={52} color={c.primary} />
+            </View>
             <Text style={[styles.title, { color: c.text }]}>{item.title}</Text>
             <Text style={[styles.description, { color: c.textSecondary }]}>{item.description}</Text>
           </View>
@@ -97,11 +118,14 @@ export default function OnboardingScreen({ onComplete }: Props) {
           <Pressable
             style={({ pressed }) => [
               styles.ctaButton,
-              { backgroundColor: c.primary, opacity: pressed ? 0.85 : 1 },
+              { backgroundColor: c.primary, opacity: pressed || finishing ? 0.85 : 1 },
             ]}
-            onPress={onComplete}
+            onPress={handleFinish}
+            disabled={finishing}
           >
-            <Text style={[styles.ctaText, { color: c.primaryText }]}>Commencer</Text>
+            <Text style={[styles.ctaText, { color: c.primaryText }]}>
+              Poser ma première tesselle
+            </Text>
           </Pressable>
         )}
       </View>
@@ -119,7 +143,14 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingHorizontal: spacing.xxxl,
   },
-  emoji: { fontSize: 56, marginBottom: spacing.lg },
+  iconCircle: {
+    width: 112,
+    height: 112,
+    borderRadius: 56,
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: spacing.xl,
+  },
   title: {
     fontSize: fonts.sizes.xxl,
     fontWeight: fonts.weights.bold,
@@ -141,7 +172,7 @@ const styles = StyleSheet.create({
   ctaButton: {
     borderRadius: radii.md,
     paddingVertical: spacing.base,
-    paddingHorizontal: spacing.xxxl + spacing.base,
+    paddingHorizontal: spacing.xxl,
   },
   ctaText: { fontSize: fonts.sizes.base, fontWeight: fonts.weights.semibold },
 });

@@ -18,6 +18,8 @@ import { useVote } from "../../src/hooks/useVote";
 import { useShield } from "../../src/hooks/useShield";
 import { useFollow } from "../../src/hooks/useFollow";
 import { minTakePrice, tesselsToEur } from "../../src/constants/iap";
+import { hapticLight } from "../../src/lib/haptics";
+import { sectorLabel } from "../../src/lib/sector";
 import { useThemeColors, fonts, spacing, radii, shadows, palette } from "../../src/theme";
 
 const STATUS_LABELS: Record<SquareStatus, string> = {
@@ -132,6 +134,7 @@ export default function SquareDetailScreen() {
 
   const handleVote = async () => {
     if (!publication || hasVoted) return;
+    hapticLight();
     const success = await vote(publication.id);
     if (success) {
       setHasVoted(true);
@@ -216,6 +219,13 @@ export default function SquareDetailScreen() {
           )}
         </View>
       )}
+
+      {/* Secteur */}
+      {square.cell_id ? (
+        <Text style={[styles.sectorText, { color: c.textTertiary }]}>
+          {sectorLabel(square.cell_id)}
+        </Text>
+      ) : null}
 
       {/* Status + Shield */}
       <View style={styles.statusRow}>
@@ -410,6 +420,12 @@ const styles = StyleSheet.create({
   },
   reportedText: { color: "#fff", fontSize: fonts.sizes.lg, fontWeight: fonts.weights.bold },
 
+  sectorText: {
+    fontSize: fonts.sizes.sm,
+    fontWeight: fonts.weights.semibold,
+    paddingHorizontal: spacing.base,
+    marginBottom: spacing.sm,
+  },
   statusRow: {
     flexDirection: "row", alignItems: "center", justifyContent: "space-between",
     paddingHorizontal: spacing.base, marginBottom: spacing.md,

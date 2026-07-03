@@ -9,12 +9,43 @@ import GridLayer from "../../src/components/GridLayer";
 import TileLayer from "../../src/components/TileLayer";
 import { useSquares, SquareWithImage } from "../../src/hooks/useSquares";
 import { onOptimisticUpload, type OptimisticUpload } from "../../src/lib/tileEvents";
+import { supabase } from "../../src/lib/supabase";
+import { getPlayfulMapStyle } from "../../src/lib/mapStyle";
 import * as Haptics from "expo-haptics";
 
 MapboxGL.setAccessToken(MAPBOX_ACCESS_TOKEN);
 
 const DEFAULT_CENTER: [number, number] = [2.3522, 48.8566]; // Paris
 const DEFAULT_ZOOM = 14;
+const HOT_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+function cellPolygonFeature(cellId: string): GeoJSON.Feature | null {
+  const cell = cellFromId(cellId);
+  if (!cell) return null;
+  return {
+    type: "Feature",
+    properties: {},
+    geometry: {
+      type: "Polygon",
+      coordinates: [[
+        [cell.sw.lng, cell.sw.lat],
+        [cell.ne.lng, cell.sw.lat],
+        [cell.ne.lng, cell.ne.lat],
+        [cell.sw.lng, cell.ne.lat],
+        [cell.sw.lng, cell.sw.lat],
+      ]],
+    },
+  };
+}
+
+function cellsToFeatureCollection(squares: SquareWithImage[]): GeoJSON.FeatureCollection {
+  return {
+    type: "FeatureCollection",
+    features: squares
+      .map((sq) => (sq.cell_id ? cellPolygonFeature(sq.cell_id) : null))
+      .filter(Boolean) as GeoJSON.Feature[],
+  };
+}
 
 export default function MapScreen() {
   const [userLocation, setUserLocation] = useState<[number, number] | null>(null);
@@ -25,6 +56,8 @@ export default function MapScreen() {
     ne: { lat: number; lng: number };
   } | null>(null);
   const [optimisticUpload, setOptimisticUpload] = useState<OptimisticUpload | null>(null);
+  const [meId, setMeId] = useState<string | null>(null);
+  const [styleJSON, setStyleJSON] = useState<string | null>(null);
   const { squares, fetchSquaresInViewport } = useSquares();
   const cameraRef = useRef<MapboxGL.Camera>(null);
   const mapViewRef = useRef<MapboxGL.MapView>(null);
@@ -41,6 +74,20 @@ export default function MapScreen() {
       }
       setLocationLoading(false);
     })();
+  }, []);
+
+  // Style "monde ludique" (sans toponymes) + utilisateur courant
+  useEffect(() => {
+    let mounted = true;
+    getPlayfulMapStyle().then((json) => {
+      if (mounted && json) setStyleJSON(json);
+    });
+    supabase.auth.getUser().then(({ data }) => {
+      if (mounted) setMeId(data.user?.id ?? null);
+    });
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   useEffect(() => {
@@ -108,6 +155,28 @@ export default function MapScreen() {
     return squares.filter((sq) => sq.image_url && sq.cell_id);
   }, [squares, currentZoom]);
 
+  // Mes cases actives → outline doré
+  const mySquaresGeoJSON = useMemo(() => {
+    if (!meId) return cellsToFeatureCollection([]);
+    return cellsToFeatureCollection(
+      squares.filter((sq) => sq.status === "occupe" && sq.owner_id === meId),
+    );
+  }, [squares, meId]);
+
+  // Cases chaudes (activité < 24 h, pas à moi) → outline orange subtil
+  const hotSquaresGeoJSON = useMemo(() => {
+    const cutoff = Date.now() - HOT_WINDOW_MS;
+    return cellsToFeatureCollection(
+      squares.filter(
+        (sq) =>
+          sq.status === "occupe" &&
+          sq.owner_id !== meId &&
+          !!sq.last_activity_at &&
+          new Date(sq.last_activity_at).getTime() > cutoff,
+      ),
+    );
+  }, [squares, meId]);
+
   if (locationLoading) {
     return (
       <View style={styles.loading}>
@@ -123,7 +192,8 @@ export default function MapScreen() {
       <MapboxGL.MapView
         ref={mapViewRef}
         style={styles.map}
-        styleURL={MapboxGL.StyleURL.Dark}
+        styleURL={styleJSON ? undefined : MapboxGL.StyleURL.Dark}
+        styleJSON={styleJSON ?? undefined}
         projection="globe"
         onCameraChanged={handleCameraChanged}
         onMapIdle={handleMapIdle}
@@ -140,6 +210,22 @@ export default function MapScreen() {
 
         {/* Grille tracée directement sur la carte — pas de réseau */}
         <GridLayer bounds={viewportBounds} zoom={currentZoom} />
+
+        {/* Cases chaudes — outline orange subtil */}
+        <MapboxGL.ShapeSource id="hot-squares" shape={hotSquaresGeoJSON}>
+          <MapboxGL.LineLayer
+            id="hot-squares-outline"
+            style={{ lineColor: "#FF6B35", lineWidth: 1.5, lineOpacity: 0.55 }}
+          />
+        </MapboxGL.ShapeSource>
+
+        {/* Mes cases — outline doré */}
+        <MapboxGL.ShapeSource id="my-squares" shape={mySquaresGeoJSON}>
+          <MapboxGL.LineLayer
+            id="my-squares-outline"
+            style={{ lineColor: "#FFD700", lineWidth: 2 }}
+          />
+        </MapboxGL.ShapeSource>
 
         {/* Photos côté client en plus (chargement rapide en zoom proche) */}
         {photosToShow.map((sq) => {

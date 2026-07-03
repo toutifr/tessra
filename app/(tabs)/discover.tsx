@@ -23,6 +23,7 @@ import {
   LeaderboardRow,
 } from "../../src/lib/economy";
 import { track } from "../../src/lib/track";
+import { hapticLight, hapticSuccess } from "../../src/lib/haptics";
 import { useThemeColors, fonts, spacing, radii, shadows, palette, ThemeColors } from "../../src/theme";
 
 const IMAGE_SIZE = Dimensions.get("window").width;
@@ -122,6 +123,7 @@ export default function DiscoverScreen() {
 
   const handleVote = async (item: FeedItem) => {
     if (!userId || item.has_voted || item.owner_id === userId) return;
+    hapticLight();
     // Optimiste
     setFeed((prev) =>
       prev.map((f) =>
@@ -152,6 +154,7 @@ export default function DiscoverScreen() {
     setClaiming(quest.key);
     try {
       await claimQuest(userId, quest.key);
+      hapticSuccess();
       await loadQuests(userId);
     } catch {
       // silencieux

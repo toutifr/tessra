@@ -19,6 +19,9 @@ import { emitOptimisticUpload } from "../src/lib/tileEvents";
 import { takeSquare, InsufficientTesselsError } from "../src/lib/economy";
 import { tesselsToEur } from "../src/constants/iap";
 import { track } from "../src/lib/track";
+import { hapticHeavy, hapticSuccess } from "../src/lib/haptics";
+import { sectorLabel } from "../src/lib/sector";
+import ConquestOverlay from "../src/components/ConquestOverlay";
 import { useThemeColors, fonts, spacing, radii, shadows } from "../src/theme";
 
 export default function UploadScreen() {
@@ -37,6 +40,9 @@ export default function UploadScreen() {
   const minPrice = Number(minPriceParam ?? 0);
   const [priceInput, setPriceInput] = useState(String(minPrice));
   const [priceError, setPriceError] = useState<string | null>(null);
+  const [successOverlay, setSuccessOverlay] = useState<{ title: string; subtitle?: string } | null>(
+    null,
+  );
   const c = useThemeColors();
 
   const requestLocation = useCallback(async () => {
@@ -249,13 +255,14 @@ export default function UploadScreen() {
         }
       }
 
-      const message = isTake
-        ? "Votre image a pris la place de la précédente !"
-        : "Votre image est maintenant visible tant que personne ne prend votre place.";
-
-      Alert.alert("Publié !", message, [
-        { text: "OK", onPress: () => router.back() },
-      ]);
+      if (isTake) {
+        hapticHeavy();
+        setTimeout(hapticSuccess, 150);
+        setSuccessOverlay({ title: "Case conquise !", subtitle: `−${bid} ⬡` });
+      } else {
+        hapticSuccess();
+        setSuccessOverlay({ title: "Tesselle posée !" });
+      }
     } catch (e: unknown) {
       if (e instanceof InsufficientTesselsError) {
         router.push(`/paywall?need=${e.need}`);
@@ -375,6 +382,11 @@ export default function UploadScreen() {
           <Text style={[styles.title, { color: c.text }]}>
             {isTake ? "Prendre cette place" : "Publier une image"}
           </Text>
+          {cellId ? (
+            <Text style={[styles.sectorText, { color: c.textTertiary }]}>
+              {sectorLabel(cellId)}
+            </Text>
+          ) : null}
 
           <Pressable
             style={({ pressed }) => [
@@ -403,6 +415,14 @@ export default function UploadScreen() {
       <Pressable style={styles.cancelButton} onPress={() => router.back()}>
         <Text style={[styles.cancelText, { color: c.textTertiary }]}>Annuler</Text>
       </Pressable>
+
+      {successOverlay && (
+        <ConquestOverlay
+          title={successOverlay.title}
+          subtitle={successOverlay.subtitle}
+          onDone={() => router.back()}
+        />
+      )}
     </View>
   );
 }
@@ -417,6 +437,12 @@ const styles = StyleSheet.create({
     letterSpacing: -0.5,
   },
   choices: { gap: spacing.md },
+  sectorText: {
+    fontSize: fonts.sizes.sm,
+    textAlign: "center",
+    marginTop: -spacing.xl,
+    marginBottom: spacing.md,
+  },
   choiceButton: {
     borderRadius: radii.md,
     padding: spacing.base + 2,

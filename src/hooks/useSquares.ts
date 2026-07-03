@@ -8,9 +8,10 @@ interface ViewportBounds {
   sw: { lat: number; lng: number };
 }
 
-/** Square with its active publication image URL */
+/** Square with its active publication image URL + owner */
 export interface SquareWithImage extends Square {
   image_url?: string | null;
+  owner_id?: string | null;
 }
 
 export function useSquares() {
@@ -48,17 +49,21 @@ export function useSquares() {
         .filter(Boolean) as string[];
 
       const imageMap = new Map<string, string>();
+      const ownerMap = new Map<string, string>();
 
       if (pubIds.length > 0) {
         const { data: pubsData } = await supabase
           .from("publications")
-          .select("id, image_url")
+          .select("id, image_url, user_id")
           .in("id", pubIds);
 
         if (pubsData) {
           for (const pub of pubsData) {
             if (pub.image_url) {
               imageMap.set(pub.id, pub.image_url);
+            }
+            if (pub.user_id) {
+              ownerMap.set(pub.id, pub.user_id);
             }
           }
         }
@@ -74,6 +79,9 @@ export function useSquares() {
           cell_id: sq.cell_id || computedCellId,
           image_url: sq.current_publication_id
             ? imageMap.get(sq.current_publication_id) ?? null
+            : null,
+          owner_id: sq.current_publication_id
+            ? ownerMap.get(sq.current_publication_id) ?? null
             : null,
         } as SquareWithImage;
       });

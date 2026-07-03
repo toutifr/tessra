@@ -14,6 +14,7 @@ import { router } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import { supabase } from "../../src/lib/supabase";
 import { useUserStats } from "../../src/hooks/useUserStats";
+import AnimatedNumber from "../../src/components/AnimatedNumber";
 import { useThemeColors, fonts, spacing, radii, shadows, palette, ThemeColors } from "../../src/theme";
 import type { UserStats } from "../../src/types/square";
 
@@ -184,7 +185,11 @@ export default function ProfileScreen() {
       {/* Solde Tessels */}
       <View style={[styles.creditsCard, { backgroundColor: c.primarySoft }, shadows.md]}>
         <View style={styles.creditsMain}>
-          <Text style={[styles.creditsNumber, { color: c.primary }]}>{stats.credits} ⬡</Text>
+          <AnimatedNumber
+            value={stats.credits}
+            suffix=" ⬡"
+            style={[styles.creditsNumber, { color: c.primary }]}
+          />
           <Text style={[styles.creditsLabel, { color: c.textSecondary }]}>Tessels</Text>
         </View>
         <Pressable
@@ -196,9 +201,9 @@ export default function ProfileScreen() {
         >
           <Text style={[styles.addButtonText, { color: c.primaryText }]}>+</Text>
         </Pressable>
-        {stats.streak_days > 0 && (
+        {stats.streak_days >= 2 && (
           <View style={[styles.streakBadge, { backgroundColor: palette.warning }]}>
-            <Text style={styles.streakText}>{stats.streak_days}j</Text>
+            <Text style={styles.streakText}>🔥 {stats.streak_days} j</Text>
           </View>
         )}
       </View>

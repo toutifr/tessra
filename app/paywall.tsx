@@ -14,6 +14,8 @@ import { getBalance } from "../src/lib/economy";
 import { purchaseTesselPack } from "../src/lib/purchases";
 import { TESSEL_PACKS, TesselPack } from "../src/constants/iap";
 import { track } from "../src/lib/track";
+import { hapticSuccess } from "../src/lib/haptics";
+import AnimatedNumber from "../src/components/AnimatedNumber";
 import { useThemeColors, fonts, spacing, radii, shadows } from "../src/theme";
 
 function priceEur(pack: TesselPack): number {
@@ -55,6 +57,7 @@ export default function PaywallScreen() {
     setBuying(sku);
     try {
       const newBalance = await purchaseTesselPack(sku);
+      hapticSuccess();
       setBalance(newBalance);
       track("purchase_success", { sku });
       Alert.alert(
@@ -82,9 +85,15 @@ export default function PaywallScreen() {
 
       <View style={[styles.balanceCard, { backgroundColor: c.primarySoft }]}>
         <Text style={[styles.balanceLabel, { color: c.textSecondary }]}>Solde actuel</Text>
-        <Text style={[styles.balanceValue, { color: c.primary }]}>
-          {balance === null ? "…" : `${balance} ⬡`}
-        </Text>
+        {balance === null ? (
+          <Text style={[styles.balanceValue, { color: c.primary }]}>…</Text>
+        ) : (
+          <AnimatedNumber
+            value={balance}
+            suffix=" ⬡"
+            style={[styles.balanceValue, { color: c.primary }]}
+          />
+        )}
         {needAmount > 0 && (
           <Text style={[styles.needText, { color: c.error }]}>
             Il te manque {needAmount} ⬡
