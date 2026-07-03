@@ -92,6 +92,32 @@ export async function takeSquare(
   return data as string;
 }
 
+export async function fortifySquare(
+  squareId: string,
+  userId: string,
+  amount: number,
+): Promise<number> {
+  const { data, error } = await supabase.rpc("fortify_square", {
+    p_user_id: userId,
+    p_square_id: squareId,
+    p_amount: amount,
+  });
+
+  if (error) {
+    const msg = error.message ?? "";
+    if (msg.includes("INSUFFICIENT_TESSELS")) {
+      const match = msg.match(/need\s+(\d+),\s*have\s+(\d+)/i);
+      throw new InsufficientTesselsError(
+        match ? Number(match[1]) : 0,
+        match ? Number(match[2]) : 0,
+      );
+    }
+    throw error;
+  }
+
+  return data as number;
+}
+
 export async function getFeed(userId: string, before?: string): Promise<FeedItem[]> {
   const { data, error } = await supabase.rpc("get_feed", {
     p_user_id: userId,

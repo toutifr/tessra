@@ -303,7 +303,7 @@ export default function UploadScreen() {
           ) : (
             <>
               <Text style={[styles.locationText, { color: c.textSecondary }]}>
-                Tessra a besoin de ta position : tu dois être dans la case pour publier
+                Piri a besoin de ta position : tu dois être dans la case pour publier
               </Text>
               <Pressable
                 style={({ pressed }) => [

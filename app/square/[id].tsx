@@ -18,7 +18,9 @@ import { useVote } from "../../src/hooks/useVote";
 import { useShield } from "../../src/hooks/useShield";
 import { useFollow } from "../../src/hooks/useFollow";
 import { minTakePrice, tesselsToEur } from "../../src/constants/iap";
-import { hapticLight } from "../../src/lib/haptics";
+import { fortifySquare, InsufficientTesselsError } from "../../src/lib/economy";
+import { track } from "../../src/lib/track";
+import { hapticLight, hapticSuccess } from "../../src/lib/haptics";
 import { sectorLabel } from "../../src/lib/sector";
 import { useThemeColors, fonts, spacing, radii, shadows, palette } from "../../src/theme";
 
@@ -40,6 +42,7 @@ export default function SquareDetailScreen() {
   const [activeShield, setActiveShield] = useState<Shield | null>(null);
   const [isFollowingOwner, setIsFollowingOwner] = useState(false);
   const [history, setHistory] = useState<Publication[]>([]);
+  const [fortifying, setFortifying] = useState(false);
   const c = useThemeColors();
 
   const { vote, voting } = useVote();
@@ -151,6 +154,25 @@ export default function SquareDetailScreen() {
       setActiveShield(shield);
     } else {
       Alert.alert("Erreur", "Impossible d'activer le bouclier.");
+    }
+  };
+
+  const handleFortify = async (amount: number) => {
+    if (!square || !currentUserId) return;
+    setFortifying(true);
+    try {
+      const newPrice = await fortifySquare(square.id, currentUserId, amount);
+      hapticSuccess();
+      setSquare({ ...square, last_price: newPrice });
+      track("fortify", { square_id: square.id, amount });
+    } catch (e) {
+      if (e instanceof InsufficientTesselsError) {
+        router.push(`/paywall?need=${e.need - e.have}`);
+      } else {
+        Alert.alert("Erreur", e instanceof Error ? e.message : "Impossible de renforcer");
+      }
+    } finally {
+      setFortifying(false);
     }
   };
 
@@ -360,6 +382,39 @@ export default function SquareDetailScreen() {
                 <View style={styles.shieldInfo}>
                   <Text style={[styles.shieldOptionTitle, { color: c.text }]}>{opt.label}</Text>
                   <Text style={[styles.shieldOptionDesc, { color: c.textTertiary }]}>{opt.desc}</Text>
+                </View>
+              </Pressable>
+            ))}
+          </View>
+        </View>
+      )}
+
+      {/* Fortify (owner) — augmente le prix de reprise, remet le decay à zéro */}
+      {isOwner && square.status === "occupe" && square.last_price < 10000 && (
+        <View style={styles.section}>
+          <Text style={[styles.sectionTitle, { color: c.text }]}>Renforcer cette case</Text>
+          <Text style={[styles.shieldOptionDesc, { color: c.textTertiary }]}>
+            Rends ta case plus chère à reprendre. Prix actuel : {square.last_price} ⬡ → un
+            attaquant paiera au moins {minTakePrice(square.last_price)} ⬡.
+          </Text>
+          <View style={[styles.shieldOptions, { marginTop: spacing.sm }]}>
+            {[100, 500, 1000].map((amount) => (
+              <Pressable
+                key={amount}
+                style={({ pressed }) => [
+                  styles.shieldOption,
+                  { backgroundColor: c.card, borderColor: c.cardBorder, opacity: pressed || fortifying ? 0.85 : 1 },
+                  shadows.sm,
+                ]}
+                onPress={() => handleFortify(amount)}
+                disabled={fortifying}
+              >
+                <View style={[styles.shieldDot, { backgroundColor: palette.gold }]} />
+                <View style={styles.shieldInfo}>
+                  <Text style={[styles.shieldOptionTitle, { color: c.text }]}>+{amount} ⬡</Text>
+                  <Text style={[styles.shieldOptionDesc, { color: c.textTertiary }]}>
+                    {tesselsToEur(amount)} — reprise min. {minTakePrice(Math.min(10000, square.last_price + amount))} ⬡
+                  </Text>
                 </View>
               </Pressable>
             ))}

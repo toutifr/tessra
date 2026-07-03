@@ -1,6 +1,6 @@
 export default {
   expo: {
-    name: "Tessra",
+    name: "Piri",
     slug: "tessra",
     version: "1.0.0",
     orientation: "portrait",
@@ -17,11 +17,11 @@ export default {
       bundleIdentifier: "com.tessra.app",
       infoPlist: {
         NSLocationWhenInUseUsageDescription:
-          "Tessra utilise votre position pour vous montrer les carrés autour de vous.",
+          "Piri utilise votre position pour vous montrer les carrés autour de vous.",
         NSCameraUsageDescription:
-          "Tessra a besoin de votre caméra pour publier des images.",
+          "Piri a besoin de votre caméra pour publier des images.",
         NSPhotoLibraryUsageDescription:
-          "Tessra a besoin d'accéder à vos photos pour publier des images.",
+          "Piri a besoin d'accéder à vos photos pour publier des images.",
         ITSAppUsesNonExemptEncryption: false,
       },
       usesAppleSignIn: true,
