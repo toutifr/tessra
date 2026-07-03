@@ -17,7 +17,7 @@ import ReportButton from "../../src/components/ReportButton";
 import { useVote } from "../../src/hooks/useVote";
 import { useShield } from "../../src/hooks/useShield";
 import { useFollow } from "../../src/hooks/useFollow";
-import { minTakePrice } from "../../src/constants/iap";
+import { minTakePrice, tesselsToEur } from "../../src/constants/iap";
 import { useThemeColors, fonts, spacing, radii, shadows, palette } from "../../src/theme";
 
 const STATUS_LABELS: Record<SquareStatus, string> = {
@@ -291,6 +291,11 @@ export default function SquareDetailScreen() {
         <Text style={[styles.price, { color: c.text }]}>
           {square.status === "libre" ? "Gratuit" : `${minPrice} ⬡`}
         </Text>
+        {square.status !== "libre" && (
+          <Text style={[styles.priceDetail, { color: c.textTertiary }]}>
+            {tesselsToEur(minPrice)}
+          </Text>
+        )}
         {square.last_price > 0 && (
           <Text style={[styles.priceDetail, { color: c.textTertiary }]}>
             Dernier prix : {square.last_price} ⬡

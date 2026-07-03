@@ -24,3 +24,15 @@ export const IAP_SKUS: string[] = TESSEL_PACKS.map((p) => p.sku);
 export function minTakePrice(lastPrice: number): number {
   return Math.min(10000, Math.max(100, Math.ceil((lastPrice * 1.5) / 10) * 10));
 }
+
+/**
+ * Équivalent € d'un montant en Tessels (conformité UE / principes CPC :
+ * prix réel affiché à côté du prix en monnaie virtuelle).
+ * Base : taux du plus petit pack (le plus défavorable) = 2,99 € / 300 ⬡.
+ */
+export const EUR_PER_TESSEL = 2.99 / 300;
+
+export function tesselsToEur(tessels: number): string {
+  const eur = tessels * EUR_PER_TESSEL;
+  return `≈ ${eur.toFixed(2).replace(".", ",")} €`;
+}

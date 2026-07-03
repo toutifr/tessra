@@ -17,6 +17,7 @@ import { supabase } from "../src/lib/supabase";
 import { cellFromId } from "../src/lib/kmGrid";
 import { emitOptimisticUpload } from "../src/lib/tileEvents";
 import { takeSquare, InsufficientTesselsError } from "../src/lib/economy";
+import { tesselsToEur } from "../src/constants/iap";
 import { track } from "../src/lib/track";
 import { useThemeColors, fonts, spacing, radii, shadows } from "../src/theme";
 
@@ -317,7 +318,7 @@ export default function UploadScreen() {
           {isTake && (
             <View style={styles.priceSection}>
               <Text style={[styles.priceLabel, { color: c.textSecondary }]}>
-                Prix minimum : {minPrice} ⬡
+                Prix minimum : {minPrice} ⬡ ({tesselsToEur(minPrice)})
               </Text>
               <TextInput
                 style={[
