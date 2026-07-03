@@ -42,7 +42,8 @@ export default {
 
       return new Response("Not found", { status: 404 });
     } catch (err: any) {
-      return new Response(JSON.stringify({ error: err.message, stack: err.stack }), {
+      console.error("[error]", err.message, err.stack);
+      return new Response(JSON.stringify({ error: "Internal server error" }), {
         status: 500, headers: { "Content-Type": "application/json" },
       });
     }
@@ -52,9 +53,19 @@ export default {
 // ─── Webhook: regenerate tile when a photo is published ───
 
 async function handleWebhook(request: Request, env: Env): Promise<Response> {
+  // Auth: reject if secret not configured or doesn't match
+  if (!env.WEBHOOK_SECRET) {
+    return new Response("Webhook secret not configured", { status: 500 });
+  }
   const authHeader = request.headers.get("Authorization");
-  if (env.WEBHOOK_SECRET && authHeader !== `Bearer ${env.WEBHOOK_SECRET}`) {
+  if (authHeader !== `Bearer ${env.WEBHOOK_SECRET}`) {
     return new Response("Unauthorized", { status: 401 });
+  }
+
+  // Limit payload size (prevent DoS)
+  const contentLength = parseInt(request.headers.get("Content-Length") ?? "0", 10);
+  if (contentLength > 100_000) {
+    return new Response("Payload too large", { status: 413 });
   }
 
   const payload = (await request.json()) as WebhookPayload;
@@ -243,6 +254,8 @@ interface SquareInfo { lat: number; lng: number; cellId: string; }
 
 async function fetchSquare(squareId: string, env: Env): Promise<SquareInfo | null> {
   if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_KEY) return null;
+  // Validate UUID format
+  if (!/^[0-9a-f-]{36}$/.test(squareId)) return null;
   const res = await fetch(
     `${env.SUPABASE_URL}/rest/v1/squares?id=eq.${squareId}&select=lat,lng,cell_id`,
     { headers: { apikey: env.SUPABASE_SERVICE_KEY, Authorization: `Bearer ${env.SUPABASE_SERVICE_KEY}` } },
@@ -257,7 +270,14 @@ interface CellPublication { cellId: string; imageUrl: string; }
 async function fetchPublicationsForCells(cellIds: string[], env: Env): Promise<CellPublication[]> {
   if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_KEY || cellIds.length === 0) return [];
 
-  const cellIdList = cellIds.map((id) => `"${id}"`).join(",");
+  // Sanitize cell IDs: only allow alphanumeric + known patterns (r1234c567)
+  const safeCellIds = cellIds.filter((id) => /^r-?\d+c-?\d+$/.test(id));
+  if (safeCellIds.length === 0) return [];
+
+  // Cap to prevent DoS
+  const limitedIds = safeCellIds.slice(0, 500);
+
+  const cellIdList = limitedIds.map((id) => `"${encodeURIComponent(id)}"`).join(",");
   const res = await fetch(
     `${env.SUPABASE_URL}/rest/v1/squares?cell_id=in.(${cellIdList})&current_publication_id=not.is.null&select=cell_id,current_publication_id`,
     { headers: { apikey: env.SUPABASE_SERVICE_KEY, Authorization: `Bearer ${env.SUPABASE_SERVICE_KEY}` } },
@@ -265,7 +285,12 @@ async function fetchPublicationsForCells(cellIds: string[], env: Env): Promise<C
   const squares = await res.json() as any[];
   if (!squares || squares.length === 0) return [];
 
-  const pubIds = squares.map((s: any) => s.current_publication_id);
+  // Sanitize publication IDs (UUIDs only)
+  const pubIds = squares
+    .map((s: any) => s.current_publication_id)
+    .filter((id: string) => /^[0-9a-f-]{36}$/.test(id));
+  if (pubIds.length === 0) return [];
+
   const pubIdList = pubIds.map((id: string) => `"${id}"`).join(",");
   const pubRes = await fetch(
     `${env.SUPABASE_URL}/rest/v1/publications?id=in.(${pubIdList})&select=id,image_url`,

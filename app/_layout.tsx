@@ -1,16 +1,18 @@
 import { useEffect } from "react";
-import { ActivityIndicator, View } from "react-native";
+import { ActivityIndicator, useColorScheme, View } from "react-native";
 import { Stack } from "expo-router";
 import { AuthProvider, useAuth } from "../src/providers/AuthProvider";
 import { useOnboarding } from "../src/hooks/useOnboarding";
 import OnboardingScreen from "../src/components/OnboardingScreen";
 import { registerForPushNotifications } from "../src/lib/notifications";
+import { useThemeColors } from "../src/theme";
 
 function RootLayoutInner() {
   const { session, loading } = useAuth();
   const { hasCompletedOnboarding, completeOnboarding } = useOnboarding();
+  const c = useThemeColors();
+  const scheme = useColorScheme();
 
-  // Register push notifications when user is authenticated
   useEffect(() => {
     if (session) {
       registerForPushNotifications().catch(() => {});
@@ -19,8 +21,8 @@ function RootLayoutInner() {
 
   if (loading || hasCompletedOnboarding === null) {
     return (
-      <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
-        <ActivityIndicator size="large" />
+      <View style={{ flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: c.bg }}>
+        <ActivityIndicator size="large" color={c.primary} />
       </View>
     );
   }
@@ -30,16 +32,46 @@ function RootLayoutInner() {
   }
 
   return (
-    <Stack screenOptions={{ headerShown: false }}>
+    <Stack
+      screenOptions={{
+        headerShown: false,
+        contentStyle: { backgroundColor: c.bg },
+        headerStyle: { backgroundColor: c.bg },
+        headerTintColor: c.text,
+        headerShadowVisible: false,
+      }}
+    >
       <Stack.Screen name="(tabs)" redirect={!session} />
       <Stack.Screen name="(auth)" redirect={!!session} />
       <Stack.Screen
         name="square/[id]"
-        options={{ presentation: "modal", headerShown: true, title: "" }}
+        options={{
+          presentation: "modal",
+          headerShown: true,
+          title: "",
+          headerStyle: { backgroundColor: c.bg },
+          headerTintColor: c.text,
+        }}
       />
       <Stack.Screen
         name="upload"
-        options={{ presentation: "modal", headerShown: true, title: "Publier" }}
+        options={{
+          presentation: "modal",
+          headerShown: true,
+          title: "Publier",
+          headerStyle: { backgroundColor: c.bg },
+          headerTintColor: c.text,
+        }}
+      />
+      <Stack.Screen
+        name="paywall"
+        options={{
+          presentation: "modal",
+          headerShown: true,
+          title: "Tessels",
+          headerStyle: { backgroundColor: c.bg },
+          headerTintColor: c.text,
+        }}
       />
     </Stack>
   );

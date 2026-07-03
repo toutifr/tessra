@@ -1,0 +1,1 @@
+réponse courte, économie de token, optimisation du workflow. projet d'app mobile à but lucratif et forte addiction.

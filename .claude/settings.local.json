@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(openspec list:*)",
+      "Bash(openspec status:*)",
+      "Bash(openspec instructions:*)",
+      "Bash(npx create-expo-app@latest . --template blank-typescript --yes)",
+      "Read(//private/tmp/**)",
+      "Bash(rm -rf tessra-init)",
+      "Bash(npx create-expo-app@latest tessra-init --template blank-typescript --yes)",
+      "Bash(cp -r /tmp/tessra-init/assets /Users/olivierschmitt/Documents/GitHub/tessra/)",
+      "Bash(cp /tmp/tessra-init/App.tsx /tmp/tessra-init/index.ts /tmp/tessra-init/tsconfig.json /Users/olivierschmitt/Documents/GitHub/tessra/)",
+      "Bash(npm install:*)",
+      "Bash(npx expo:*)",
+      "Bash(for dir:*)",
+      "Bash(do touch:*)",
+      "Bash(done)",
+      "Bash(npx tsc:*)",
+      "Bash(grep MutationRequestPurchaseArgs node_modules/react-native-iap/src/types/*.ts node_modules/react-native-iap/src/index.ts)",
+      "Bash(npx wrangler:*)",
+      "Bash(openspec new:*)"
+    ]
+  }
+}

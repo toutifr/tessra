@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -12,9 +12,13 @@ import {
 import { router, useLocalSearchParams } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import * as ImageManipulator from "expo-image-manipulator";
+import * as Location from "expo-location";
 import { supabase } from "../src/lib/supabase";
 import { cellFromId } from "../src/lib/kmGrid";
 import { emitOptimisticUpload } from "../src/lib/tileEvents";
+import { takeSquare, InsufficientTesselsError } from "../src/lib/economy";
+import { track } from "../src/lib/track";
+import { useThemeColors, fonts, spacing, radii, shadows } from "../src/theme";
 
 export default function UploadScreen() {
   const { squareId, cellId, replace, minPrice: minPriceParam } = useLocalSearchParams<{
@@ -25,44 +29,127 @@ export default function UploadScreen() {
   }>();
   const [imageUri, setImageUri] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
-  const isReplacement = replace === "true";
+  const [userCoords, setUserCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [locationError, setLocationError] = useState(false);
+  const [locating, setLocating] = useState(false);
+  const isTake = replace === "true";
   const minPrice = Number(minPriceParam ?? 0);
   const [priceInput, setPriceInput] = useState(String(minPrice));
   const [priceError, setPriceError] = useState<string | null>(null);
+  const c = useThemeColors();
+
+  const requestLocation = useCallback(async () => {
+    setLocating(true);
+    setLocationError(false);
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== "granted") {
+        setLocationError(true);
+        return;
+      }
+      const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
+      setUserCoords({ lat: loc.coords.latitude, lng: loc.coords.longitude });
+    } catch {
+      setLocationError(true);
+    } finally {
+      setLocating(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    // GPS obligatoire uniquement pour la publication libre
+    if (!isTake) {
+      requestLocation();
+    }
+  }, [isTake, requestLocation]);
 
   const pickImage = async (useCamera: boolean) => {
-    const permission = useCamera
-      ? await ImagePicker.requestCameraPermissionsAsync()
-      : await ImagePicker.requestMediaLibraryPermissionsAsync();
+    try {
+      const permission = useCamera
+        ? await ImagePicker.requestCameraPermissionsAsync()
+        : await ImagePicker.requestMediaLibraryPermissionsAsync();
 
-    if (!permission.granted) {
-      Alert.alert("Permission requise", "Autorisez l'accès pour continuer.");
-      return;
-    }
+      if (!permission.granted) {
+        Alert.alert("Permission requise", "Autorisez l'accès pour continuer.");
+        return;
+      }
 
-    const result = useCamera
-      ? await ImagePicker.launchCameraAsync({ quality: 0.8, allowsEditing: true, aspect: [1, 1] })
-      : await ImagePicker.launchImageLibraryAsync({
-          quality: 0.8,
-          allowsEditing: true,
-          aspect: [1, 1],
-          mediaTypes: ["images"],
-        });
+      const result = useCamera
+        ? await ImagePicker.launchCameraAsync({
+            quality: 0.7,
+            allowsEditing: false,
+            exif: false,
+          })
+        : await ImagePicker.launchImageLibraryAsync({
+            quality: 0.7,
+            allowsEditing: false,
+            mediaTypes: ["images"],
+            exif: false,
+          });
 
-    if (!result.canceled && result.assets[0]) {
-      const manipulated = await ImageManipulator.manipulateAsync(
-        result.assets[0].uri,
-        [{ resize: { width: 1024, height: 1024 } }],
-        { compress: 0.8, format: ImageManipulator.SaveFormat.JPEG },
-      );
-      setImageUri(manipulated.uri);
+      if (result.canceled || !result.assets?.[0]?.uri) return;
+
+      const asset = result.assets[0];
+      const rawUri = asset.uri;
+      const w = asset.width ?? 0;
+      const h = asset.height ?? 0;
+
+      const cropActions: ImageManipulator.Action[] = [];
+      if (w > 0 && h > 0 && w !== h) {
+        const side = Math.min(w, h);
+        const originX = Math.floor((w - side) / 2);
+        const originY = Math.floor((h - side) / 2);
+        cropActions.push({ crop: { originX, originY, width: side, height: side } });
+      }
+      cropActions.push({ resize: { width: 1024, height: 1024 } });
+
+      try {
+        const manipulated = await ImageManipulator.manipulateAsync(
+          rawUri,
+          cropActions,
+          { compress: 0.7, format: ImageManipulator.SaveFormat.JPEG },
+        );
+        setImageUri(manipulated.uri);
+        return;
+      } catch {
+        // Fallback
+      }
+
+      try {
+        const manipulated = await ImageManipulator.manipulateAsync(
+          rawUri,
+          [{ resize: { width: 512, height: 512 } }],
+          { compress: 0.5, format: ImageManipulator.SaveFormat.JPEG },
+        );
+        setImageUri(manipulated.uri);
+        return;
+      } catch {
+        // Fallback
+      }
+
+      try {
+        const manipulated = await ImageManipulator.manipulateAsync(
+          rawUri,
+          [],
+          { compress: 0.4, format: ImageManipulator.SaveFormat.JPEG },
+        );
+        setImageUri(manipulated.uri);
+        return;
+      } catch {
+        // All failed
+      }
+
+      setImageUri(rawUri);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : JSON.stringify(e);
+      Alert.alert("Erreur image", msg);
     }
   };
 
-  const validatePrice = (): number | null => {
+  const validateBid = (): number | null => {
     const price = Number(priceInput);
-    if (isNaN(price) || price < minPrice) {
-      setPriceError(`Le prix minimum est ${minPrice}€`);
+    if (isNaN(price) || !Number.isInteger(price) || price < minPrice) {
+      setPriceError(`Le prix minimum est ${minPrice} ⬡`);
       return null;
     }
     setPriceError(null);
@@ -73,10 +160,14 @@ export default function UploadScreen() {
     if (!imageUri) return;
     if (!squareId && !cellId) return;
 
-    // Validate price for replacements
-    if (isReplacement) {
-      const price = validatePrice();
-      if (price === null) return;
+    let bid: number | null = null;
+    if (isTake) {
+      bid = validateBid();
+      if (bid === null) return;
+    } else if (!userCoords) {
+      // Publication libre : GPS obligatoire
+      setLocationError(true);
+      return;
     }
 
     setUploading(true);
@@ -86,7 +177,6 @@ export default function UploadScreen() {
       } = await supabase.auth.getUser();
       if (!user) throw new Error("Connectez-vous pour publier");
 
-      // Read the file as blob
       const response = await fetch(imageUri);
       const blob = await response.blob();
       const arrayBuffer = await new Response(blob).arrayBuffer();
@@ -94,40 +184,41 @@ export default function UploadScreen() {
       const storageKey = squareId ?? cellId!;
       const fileName = `${storageKey}/${Date.now()}.jpg`;
 
-      // Upload to Supabase Storage
       const { error: uploadError } = await supabase.storage
         .from("publications")
         .upload(fileName, arrayBuffer, { contentType: "image/jpeg" });
 
       if (uploadError) throw uploadError;
 
-      // Get the public URL
       const {
         data: { publicUrl },
       } = supabase.storage.from("publications").getPublicUrl(fileName);
 
-      let pubError;
-
-      if (isReplacement && squareId) {
-        // Paid replacement of occupied square
-        const price = Number(priceInput);
-        const result = await supabase.rpc("replace_square", {
-          p_square_id: squareId,
-          p_user_id: user.id,
-          p_image_url: publicUrl,
-          p_price_paid: price,
-        });
-        pubError = result.error;
+      if (isTake && squareId) {
+        // Prise payée en Tessels — à distance, pas de GPS
+        await takeSquare(squareId, user.id, publicUrl, bid ?? undefined);
+        track("take_square", { square_id: squareId, bid });
       } else if (squareId) {
-        // Free publish to existing libre square
-        const result = await supabase.rpc("publish_to_square", {
-          p_square_id: squareId,
+        // Case libre existante : passe par publish_new_square (GPS vérifié serveur)
+        const { data: sq, error: sqError } = await supabase
+          .from("squares")
+          .select("cell_id, geohash, lat, lng")
+          .eq("id", squareId)
+          .single();
+        if (sqError || !sq) throw sqError ?? new Error("Case introuvable");
+
+        const result = await supabase.rpc("publish_new_square", {
+          p_geohash: sq.cell_id ?? sq.geohash,
+          p_lat: sq.lat,
+          p_lng: sq.lng,
           p_user_id: user.id,
           p_image_url: publicUrl,
+          p_user_lat: userCoords!.lat,
+          p_user_lng: userCoords!.lng,
         });
-        pubError = result.error;
+        if (result.error) throw result.error;
+        track("publish", { square_id: squareId });
       } else if (cellId) {
-        // New square from cell ID — create square + publish atomically
         const cell = cellFromId(cellId);
         if (!cell) throw new Error("ID de cellule invalide");
 
@@ -137,13 +228,13 @@ export default function UploadScreen() {
           p_lng: cell.center.lng,
           p_user_id: user.id,
           p_image_url: publicUrl,
+          p_user_lat: userCoords!.lat,
+          p_user_lng: userCoords!.lng,
         });
-        pubError = result.error;
+        if (result.error) throw result.error;
+        track("publish", { cell_id: cellId });
       }
 
-      if (pubError) throw pubError;
-
-      // Emit optimistic update so the map shows the photo immediately
       const effectiveCellId = cellId ?? squareId;
       if (effectiveCellId) {
         const cell = cellFromId(effectiveCellId);
@@ -157,14 +248,19 @@ export default function UploadScreen() {
         }
       }
 
-      const message = isReplacement
-        ? "Votre image a remplacé la précédente !"
+      const message = isTake
+        ? "Votre image a pris la place de la précédente !"
         : "Votre image est maintenant visible tant que personne ne prend votre place.";
 
       Alert.alert("Publié !", message, [
         { text: "OK", onPress: () => router.back() },
       ]);
     } catch (e: unknown) {
+      if (e instanceof InsufficientTesselsError) {
+        router.push(`/paywall?need=${e.need}`);
+        return;
+      }
+
       const message =
         e instanceof Error
           ? e.message
@@ -172,7 +268,6 @@ export default function UploadScreen() {
             ? String((e as { message: unknown }).message)
             : JSON.stringify(e);
 
-      // Handle stale price error
       if (typeof message === "string" && message.includes("Price too low")) {
         Alert.alert(
           "Prix mis à jour",
@@ -187,21 +282,52 @@ export default function UploadScreen() {
     }
   };
 
-  return (
-    <View style={styles.container}>
-      <Text style={styles.title}>
-        {isReplacement ? "Prendre cette place" : "Publier une image"}
-      </Text>
+  // Publication libre sans position : bloquant
+  const needsLocation = !isTake && !userCoords;
 
-      {imageUri ? (
+  return (
+    <View style={[styles.container, { backgroundColor: c.bg }]}>
+      {needsLocation && (locationError || locating) ? (
+        <View style={styles.choices}>
+          <Text style={[styles.title, { color: c.text }]}>Position requise</Text>
+          {locating ? (
+            <ActivityIndicator size="large" color={c.primary} />
+          ) : (
+            <>
+              <Text style={[styles.locationText, { color: c.textSecondary }]}>
+                Tessra a besoin de ta position : tu dois être dans la case pour publier
+              </Text>
+              <Pressable
+                style={({ pressed }) => [
+                  styles.choiceButton,
+                  { backgroundColor: c.primary, opacity: pressed ? 0.85 : 1 },
+                  shadows.md,
+                ]}
+                onPress={requestLocation}
+              >
+                <Text style={[styles.choiceText, { color: c.primaryText }]}>Réessayer</Text>
+              </Pressable>
+            </>
+          )}
+        </View>
+      ) : imageUri ? (
         <View style={styles.previewContainer}>
           <Image source={{ uri: imageUri }} style={styles.preview} />
 
-          {isReplacement && (
+          {isTake && (
             <View style={styles.priceSection}>
-              <Text style={styles.priceLabel}>Prix minimum : {minPrice}€</Text>
+              <Text style={[styles.priceLabel, { color: c.textSecondary }]}>
+                Prix minimum : {minPrice} ⬡
+              </Text>
               <TextInput
-                style={[styles.priceInput, priceError ? styles.priceInputError : null]}
+                style={[
+                  styles.priceInput,
+                  {
+                    backgroundColor: c.inputBg,
+                    borderColor: priceError ? c.error : c.inputBorder,
+                    color: c.text,
+                  },
+                ]}
                 value={priceInput}
                 onChangeText={(text) => {
                   setPriceInput(text);
@@ -209,30 +335,35 @@ export default function UploadScreen() {
                 }}
                 keyboardType="numeric"
                 placeholder={`${minPrice}`}
+                placeholderTextColor={c.textTertiary}
               />
-              {priceError && <Text style={styles.errorText}>{priceError}</Text>}
+              {priceError && <Text style={[styles.errorText, { color: c.error }]}>{priceError}</Text>}
             </View>
           )}
 
           <View style={styles.previewActions}>
             <Pressable
-              style={styles.changeButton}
+              style={({ pressed }) => [
+                styles.secondaryButton,
+                { borderColor: c.border, opacity: pressed ? 0.8 : 1 },
+              ]}
               onPress={() => setImageUri(null)}
             >
-              <Text style={styles.changeText}>Changer</Text>
+              <Text style={[styles.secondaryText, { color: c.text }]}>Changer</Text>
             </Pressable>
             <Pressable
-              style={[styles.uploadButton, uploading && styles.disabled]}
+              style={({ pressed }) => [
+                styles.primaryButton,
+                { backgroundColor: c.primary, opacity: pressed || uploading ? 0.85 : 1 },
+              ]}
               onPress={handleUpload}
               disabled={uploading}
             >
               {uploading ? (
-                <ActivityIndicator color="#fff" />
+                <ActivityIndicator color={c.primaryText} />
               ) : (
-                <Text style={styles.uploadText}>
-                  {isReplacement
-                    ? `Prendre cette place pour ${priceInput}€`
-                    : "Publier"}
+                <Text style={[styles.primaryText, { color: c.primaryText }]}>
+                  {isTake ? `Prendre — ${priceInput} ⬡` : "Publier"}
                 </Text>
               )}
             </Pressable>
@@ -240,66 +371,91 @@ export default function UploadScreen() {
         </View>
       ) : (
         <View style={styles.choices}>
-          <Pressable style={styles.choiceButton} onPress={() => pickImage(true)}>
-            <Text style={styles.choiceText}>Prendre une photo</Text>
+          <Text style={[styles.title, { color: c.text }]}>
+            {isTake ? "Prendre cette place" : "Publier une image"}
+          </Text>
+
+          <Pressable
+            style={({ pressed }) => [
+              styles.choiceButton,
+              { backgroundColor: c.primary, opacity: pressed ? 0.85 : 1 },
+              shadows.md,
+            ]}
+            onPress={() => pickImage(true)}
+          >
+            <Text style={[styles.choiceText, { color: c.primaryText }]}>Prendre une photo</Text>
           </Pressable>
-          <Pressable style={styles.choiceButton} onPress={() => pickImage(false)}>
-            <Text style={styles.choiceText}>Choisir dans la galerie</Text>
+
+          <Pressable
+            style={({ pressed }) => [
+              styles.choiceButton,
+              { backgroundColor: c.card, borderWidth: 1, borderColor: c.border, opacity: pressed ? 0.85 : 1 },
+              shadows.sm,
+            ]}
+            onPress={() => pickImage(false)}
+          >
+            <Text style={[styles.choiceText, { color: c.text }]}>Choisir dans la galerie</Text>
           </Pressable>
         </View>
       )}
 
       <Pressable style={styles.cancelButton} onPress={() => router.back()}>
-        <Text style={styles.cancelText}>Annuler</Text>
+        <Text style={[styles.cancelText, { color: c.textTertiary }]}>Annuler</Text>
       </Pressable>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#fff", padding: 24, justifyContent: "center" },
-  title: { fontSize: 24, fontWeight: "bold", textAlign: "center", marginBottom: 8 },
-  choices: { gap: 16 },
+  container: { flex: 1, padding: spacing.xl, justifyContent: "center" },
+  title: {
+    fontSize: fonts.sizes.xxl,
+    fontWeight: fonts.weights.bold,
+    textAlign: "center",
+    marginBottom: spacing.xxl,
+    letterSpacing: -0.5,
+  },
+  choices: { gap: spacing.md },
   choiceButton: {
-    backgroundColor: "#007AFF",
-    borderRadius: 8,
-    padding: 16,
+    borderRadius: radii.md,
+    padding: spacing.base + 2,
     alignItems: "center",
   },
-  choiceText: { color: "#fff", fontSize: 16, fontWeight: "600" },
-  previewContainer: { alignItems: "center" },
-  preview: { width: 280, height: 280, borderRadius: 12, marginBottom: 24 },
-  previewActions: { flexDirection: "row", gap: 16 },
-  changeButton: {
-    borderWidth: 1,
-    borderColor: "#ddd",
-    borderRadius: 8,
-    padding: 16,
-    paddingHorizontal: 24,
+  choiceText: { fontSize: fonts.sizes.base, fontWeight: fonts.weights.semibold },
+  locationText: {
+    fontSize: fonts.sizes.base,
+    textAlign: "center",
+    marginBottom: spacing.md,
+    lineHeight: fonts.sizes.base * fonts.lineHeights.normal,
   },
-  changeText: { fontSize: 16, color: "#333" },
-  uploadButton: {
-    backgroundColor: "#007AFF",
-    borderRadius: 8,
-    padding: 16,
-    paddingHorizontal: 32,
+  previewContainer: { alignItems: "center" },
+  preview: { width: 280, height: 280, borderRadius: radii.lg, marginBottom: spacing.xl },
+  previewActions: { flexDirection: "row", gap: spacing.md },
+  secondaryButton: {
+    borderWidth: 1,
+    borderRadius: radii.md,
+    padding: spacing.base,
+    paddingHorizontal: spacing.xl,
+  },
+  secondaryText: { fontSize: fonts.sizes.base, fontWeight: fonts.weights.medium },
+  primaryButton: {
+    borderRadius: radii.md,
+    padding: spacing.base,
+    paddingHorizontal: spacing.xl,
     flexShrink: 1,
   },
-  disabled: { opacity: 0.6 },
-  uploadText: { color: "#fff", fontSize: 16, fontWeight: "600" },
-  cancelButton: { marginTop: 24, alignItems: "center" },
-  cancelText: { color: "#999", fontSize: 16 },
-  priceSection: { marginBottom: 16, width: "100%" },
-  priceLabel: { fontSize: 14, color: "#666", marginBottom: 8, textAlign: "center" },
+  primaryText: { fontSize: fonts.sizes.base, fontWeight: fonts.weights.semibold },
+  cancelButton: { marginTop: spacing.xl, alignItems: "center" },
+  cancelText: { fontSize: fonts.sizes.base },
+  priceSection: { marginBottom: spacing.base, width: "100%" },
+  priceLabel: { fontSize: fonts.sizes.sm, marginBottom: spacing.sm, textAlign: "center" },
   priceInput: {
     borderWidth: 1,
-    borderColor: "#ddd",
-    borderRadius: 8,
-    padding: 12,
-    fontSize: 20,
+    borderRadius: radii.md,
+    padding: spacing.md,
+    fontSize: fonts.sizes.xl,
     textAlign: "center",
-    fontWeight: "bold",
+    fontWeight: fonts.weights.bold,
   },
-  priceInputError: { borderColor: "#FF3B30" },
-  errorText: { color: "#FF3B30", fontSize: 12, marginTop: 4, textAlign: "center" },
+  errorText: { fontSize: fonts.sizes.xs, marginTop: spacing.xs, textAlign: "center" },
 });

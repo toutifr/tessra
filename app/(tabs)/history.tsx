@@ -10,6 +10,7 @@ import {
   View,
 } from "react-native";
 import { supabase } from "../../src/lib/supabase";
+import { useThemeColors, fonts, spacing, radii, shadows } from "../../src/theme";
 
 interface HistoryEntry {
   id: string;
@@ -39,6 +40,7 @@ export default function HistoryScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [filter, setFilter] = useState<FilterType>("all");
+  const c = useThemeColors();
 
   const loadHistory = useCallback(async () => {
     const {
@@ -46,6 +48,7 @@ export default function HistoryScreen() {
     } = await supabase.auth.getUser();
     if (!user) return;
 
+    // Try publication_history first
     let query = supabase
       .from("publication_history")
       .select("id, image_url, started_at, ended_at, status, acquisition_mode")
@@ -56,8 +59,39 @@ export default function HistoryScreen() {
       query = query.eq("status", filter);
     }
 
-    const { data } = await query;
-    setEntries((data as HistoryEntry[]) ?? []);
+    const { data, error } = await query;
+
+    if (data && data.length > 0) {
+      setEntries(data as HistoryEntry[]);
+      return;
+    }
+
+    // Fallback: query publications directly
+    let pubQuery = supabase
+      .from("publications")
+      .select("id, image_url, created_at, status")
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false });
+
+    if (filter !== "all") {
+      pubQuery = pubQuery.eq("status", filter);
+    }
+
+    const { data: pubData } = await pubQuery;
+    if (pubData && pubData.length > 0) {
+      setEntries(
+        pubData.map((p: any) => ({
+          id: p.id,
+          image_url: p.image_url,
+          started_at: p.created_at,
+          ended_at: null,
+          status: p.status,
+          acquisition_mode: p.price_paid ? "paid" : "free",
+        })),
+      );
+    } else {
+      setEntries([]);
+    }
   }, [filter]);
 
   useEffect(() => {
@@ -89,24 +123,32 @@ export default function HistoryScreen() {
 
   if (loading) {
     return (
-      <View style={styles.loading}>
-        <ActivityIndicator size="large" />
+      <View style={[styles.loading, { backgroundColor: c.bg }]}>
+        <ActivityIndicator size="large" color={c.primary} />
       </View>
     );
   }
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Mes publications</Text>
+    <View style={[styles.container, { backgroundColor: c.bg }]}>
+      <Text style={[styles.title, { color: c.text }]}>Mes publications</Text>
 
       <View style={styles.filterRow}>
         {filters.map((f) => (
           <Pressable
             key={f.key}
-            style={[styles.filterButton, filter === f.key && styles.filterActive]}
+            style={[
+              styles.filterButton,
+              { backgroundColor: filter === f.key ? c.primary : c.bgTertiary },
+            ]}
             onPress={() => setFilter(f.key)}
           >
-            <Text style={[styles.filterText, filter === f.key && styles.filterTextActive]}>
+            <Text
+              style={[
+                styles.filterText,
+                { color: filter === f.key ? c.primaryText : c.textSecondary },
+              ]}
+            >
               {f.label}
             </Text>
           </Pressable>
@@ -116,21 +158,38 @@ export default function HistoryScreen() {
       <FlatList
         data={entries}
         keyExtractor={(item) => item.id}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+        contentContainerStyle={styles.list}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={c.primary} />
+        }
         ListEmptyComponent={
           <View style={styles.empty}>
-            <Text style={styles.emptyText}>Aucune publication</Text>
+            <Text style={[styles.emptyText, { color: c.textTertiary }]}>Aucune publication</Text>
           </View>
         }
         renderItem={({ item }) => (
-          <View style={styles.card}>
+          <View style={[styles.card, { backgroundColor: c.card, borderColor: c.cardBorder }, shadows.sm]}>
             <Image source={{ uri: item.image_url }} style={styles.thumbnail} />
             <View style={styles.cardInfo}>
-              <Text style={styles.cardStatus}>{STATUS_LABELS[item.status] ?? item.status}</Text>
-              <Text style={styles.cardMode}>{MODE_LABELS[item.acquisition_mode] ?? item.acquisition_mode}</Text>
-              <Text style={styles.cardDate}>{formatDate(item.started_at)}</Text>
+              <View style={styles.cardTop}>
+                <Text style={[styles.cardStatus, { color: c.text }]}>
+                  {STATUS_LABELS[item.status] ?? item.status}
+                </Text>
+                <View style={[
+                  styles.modeBadge,
+                  { backgroundColor: item.status === "active" ? c.primarySoft : c.bgTertiary },
+                ]}>
+                  <Text style={[
+                    styles.modeText,
+                    { color: item.status === "active" ? c.primary : c.textTertiary },
+                  ]}>
+                    {MODE_LABELS[item.acquisition_mode] ?? item.acquisition_mode}
+                  </Text>
+                </View>
+              </View>
+              <Text style={[styles.cardDate, { color: c.textTertiary }]}>{formatDate(item.started_at)}</Text>
               {item.ended_at && (
-                <Text style={styles.cardDate}>Fin: {formatDate(item.ended_at)}</Text>
+                <Text style={[styles.cardDate, { color: c.textTertiary }]}>Fin: {formatDate(item.ended_at)}</Text>
               )}
             </View>
           </View>
@@ -141,32 +200,47 @@ export default function HistoryScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#fff" },
+  container: { flex: 1 },
   loading: { flex: 1, justifyContent: "center", alignItems: "center" },
-  title: { fontSize: 24, fontWeight: "bold", padding: 16, paddingTop: 60 },
-  filterRow: { flexDirection: "row", paddingHorizontal: 16, gap: 8, marginBottom: 8 },
-  filterButton: {
-    paddingVertical: 6,
-    paddingHorizontal: 14,
-    borderRadius: 16,
-    backgroundColor: "#f0f0f0",
+  title: {
+    fontSize: fonts.sizes.xxl,
+    fontWeight: fonts.weights.bold,
+    paddingHorizontal: spacing.base,
+    paddingTop: 60,
+    paddingBottom: spacing.base,
+    letterSpacing: -0.5,
   },
-  filterActive: { backgroundColor: "#007AFF" },
-  filterText: { fontSize: 14, color: "#666" },
-  filterTextActive: { color: "#fff" },
+  filterRow: {
+    flexDirection: "row",
+    paddingHorizontal: spacing.base,
+    gap: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  filterButton: {
+    paddingVertical: spacing.xs + 2,
+    paddingHorizontal: spacing.base,
+    borderRadius: radii.full,
+  },
+  filterText: { fontSize: fonts.sizes.sm, fontWeight: fonts.weights.medium },
+  list: { paddingHorizontal: spacing.base, paddingBottom: spacing.xxl },
   empty: { flex: 1, alignItems: "center", justifyContent: "center", paddingTop: 60 },
-  emptyText: { color: "#999", fontSize: 16 },
+  emptyText: { fontSize: fonts.sizes.base },
   card: {
     flexDirection: "row",
-    padding: 12,
-    marginHorizontal: 16,
-    marginBottom: 8,
-    borderRadius: 8,
-    backgroundColor: "#f8f8f8",
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+    borderRadius: radii.md,
+    borderWidth: 1,
   },
-  thumbnail: { width: 64, height: 64, borderRadius: 8, marginRight: 12 },
+  thumbnail: { width: 60, height: 60, borderRadius: radii.sm, marginRight: spacing.md },
   cardInfo: { flex: 1, justifyContent: "center" },
-  cardStatus: { fontSize: 16, fontWeight: "600", marginBottom: 2 },
-  cardMode: { fontSize: 13, color: "#666", marginBottom: 4 },
-  cardDate: { fontSize: 12, color: "#999" },
+  cardTop: { flexDirection: "row", alignItems: "center", gap: spacing.sm, marginBottom: 2 },
+  cardStatus: { fontSize: fonts.sizes.base, fontWeight: fonts.weights.semibold },
+  modeBadge: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+    borderRadius: radii.full,
+  },
+  modeText: { fontSize: fonts.sizes.xs, fontWeight: fonts.weights.medium },
+  cardDate: { fontSize: fonts.sizes.xs, marginTop: 2 },
 });

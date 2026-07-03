@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
 import { supabase } from "../lib/supabase";
-
+import { useThemeColors, fonts, spacing, radii } from "../theme";
 
 const REASONS = [
   { key: "spam", label: "Spam" },
@@ -18,6 +18,7 @@ interface Props {
 export default function ReportButton({ publicationId }: Props) {
   const [showReasons, setShowReasons] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const c = useThemeColors();
 
   const handleReport = async (reason: string) => {
     setSubmitting(true);
@@ -47,43 +48,51 @@ export default function ReportButton({ publicationId }: Props) {
 
   if (showReasons) {
     return (
-      <View style={styles.reasonsContainer}>
-        <Text style={styles.reasonsTitle}>Raison du signalement</Text>
+      <View style={[styles.reasonsContainer, { backgroundColor: c.bgTertiary }]}>
+        <Text style={[styles.reasonsTitle, { color: c.text }]}>Raison du signalement</Text>
         {REASONS.map(({ key, label }) => (
           <Pressable
             key={key}
-            style={styles.reasonButton}
+            style={({ pressed }) => [
+              styles.reasonButton,
+              { borderBottomColor: c.separator, opacity: pressed ? 0.7 : 1 },
+            ]}
             onPress={() => handleReport(key)}
             disabled={submitting}
           >
-            <Text style={styles.reasonText}>{label}</Text>
+            <Text style={[styles.reasonText, { color: c.text }]}>{label}</Text>
           </Pressable>
         ))}
         <Pressable style={styles.cancelButton} onPress={() => setShowReasons(false)}>
-          <Text style={styles.cancelText}>Annuler</Text>
+          <Text style={[styles.cancelText, { color: c.textTertiary }]}>Annuler</Text>
         </Pressable>
       </View>
     );
   }
 
   return (
-    <Pressable style={styles.reportButton} onPress={() => setShowReasons(true)}>
-      <Text style={styles.reportText}>Signaler</Text>
+    <Pressable
+      style={({ pressed }) => [styles.reportButton, { opacity: pressed ? 0.7 : 1 }]}
+      onPress={() => setShowReasons(true)}
+    >
+      <Text style={[styles.reportText, { color: c.textTertiary }]}>Signaler</Text>
     </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
-  reportButton: { marginTop: 16, alignItems: "center" },
-  reportText: { color: "#FF3B30", fontSize: 14 },
-  reasonsContainer: { marginTop: 16, padding: 12, backgroundColor: "#f8f8f8", borderRadius: 8 },
-  reasonsTitle: { fontSize: 16, fontWeight: "600", marginBottom: 12 },
-  reasonButton: {
-    padding: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: "#eee",
+  reportButton: { marginTop: spacing.lg, alignItems: "center", paddingHorizontal: spacing.base },
+  reportText: { fontSize: fonts.sizes.sm },
+  reasonsContainer: {
+    marginTop: spacing.base, marginHorizontal: spacing.base,
+    padding: spacing.base, borderRadius: radii.md,
   },
-  reasonText: { fontSize: 15 },
-  cancelButton: { padding: 12, alignItems: "center" },
-  cancelText: { color: "#999", fontSize: 14 },
+  reasonsTitle: { fontSize: fonts.sizes.base, fontWeight: fonts.weights.semibold, marginBottom: spacing.md },
+  reasonButton: {
+    paddingVertical: spacing.md,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  reasonText: { fontSize: fonts.sizes.base },
+  cancelButton: { paddingVertical: spacing.md, alignItems: "center" },
+  cancelText: { fontSize: fonts.sizes.sm },
 });

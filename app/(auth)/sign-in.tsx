@@ -16,11 +16,13 @@ import {
   signInWithGoogle,
   isAppleSignInAvailable,
 } from "../../src/lib/auth-providers";
+import { useThemeColors, fonts, spacing, radii } from "../../src/theme";
 
 export default function SignInScreen() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const c = useThemeColors();
 
   const handleSignIn = async () => {
     if (!email || !password) {
@@ -64,16 +66,17 @@ export default function SignInScreen() {
 
   return (
     <KeyboardAvoidingView
-      style={styles.container}
+      style={[styles.container, { backgroundColor: c.bg }]}
       behavior={Platform.OS === "ios" ? "padding" : "height"}
     >
       <View style={styles.inner}>
-        <Text style={styles.title}>Tessra</Text>
-        <Text style={styles.subtitle}>Connectez-vous</Text>
+        <Text style={[styles.brand, { color: c.primary }]}>tessra</Text>
+        <Text style={[styles.subtitle, { color: c.textSecondary }]}>Connectez-vous</Text>
 
         <TextInput
-          style={styles.input}
+          style={[styles.input, { backgroundColor: c.inputBg, borderColor: c.inputBorder, color: c.text }]}
           placeholder="Email"
+          placeholderTextColor={c.textTertiary}
           value={email}
           onChangeText={setEmail}
           autoCapitalize="none"
@@ -81,45 +84,63 @@ export default function SignInScreen() {
           textContentType="emailAddress"
         />
         <TextInput
-          style={styles.input}
+          style={[styles.input, { backgroundColor: c.inputBg, borderColor: c.inputBorder, color: c.text }]}
           placeholder="Mot de passe"
+          placeholderTextColor={c.textTertiary}
           value={password}
           onChangeText={setPassword}
           secureTextEntry
           textContentType="password"
         />
 
-        <Pressable style={styles.button} onPress={handleSignIn} disabled={loading}>
-          <Text style={styles.buttonText}>{loading ? "Connexion..." : "Se connecter"}</Text>
+        <Pressable
+          style={({ pressed }) => [
+            styles.button,
+            { backgroundColor: c.primary, opacity: pressed || loading ? 0.85 : 1 },
+          ]}
+          onPress={handleSignIn}
+          disabled={loading}
+        >
+          <Text style={[styles.buttonText, { color: c.primaryText }]}>
+            {loading ? "Connexion..." : "Se connecter"}
+          </Text>
         </Pressable>
 
         <View style={styles.divider}>
-          <View style={styles.dividerLine} />
-          <Text style={styles.dividerText}>ou</Text>
-          <View style={styles.dividerLine} />
+          <View style={[styles.dividerLine, { backgroundColor: c.separator }]} />
+          <Text style={[styles.dividerText, { color: c.textTertiary }]}>ou</Text>
+          <View style={[styles.dividerLine, { backgroundColor: c.separator }]} />
         </View>
 
         {isAppleSignInAvailable() && (
           <Pressable
-            style={[styles.socialButton, styles.appleButton]}
+            style={({ pressed }) => [
+              styles.socialButton,
+              { backgroundColor: c.text, opacity: pressed ? 0.85 : 1 },
+            ]}
             onPress={handleAppleSignIn}
             disabled={loading}
           >
-            <Text style={styles.appleButtonText}>Continuer avec Apple</Text>
+            <Text style={[styles.socialText, { color: c.bg }]}>Continuer avec Apple</Text>
           </Pressable>
         )}
 
         <Pressable
-          style={[styles.socialButton, styles.googleButton]}
+          style={({ pressed }) => [
+            styles.socialButton,
+            { backgroundColor: c.card, borderWidth: 1, borderColor: c.border, opacity: pressed ? 0.85 : 1 },
+          ]}
           onPress={handleGoogleSignIn}
           disabled={loading}
         >
-          <Text style={styles.googleButtonText}>Continuer avec Google</Text>
+          <Text style={[styles.socialText, { color: c.text }]}>Continuer avec Google</Text>
         </Pressable>
 
         <Link href="/(auth)/sign-up" asChild>
           <Pressable style={styles.link}>
-            <Text style={styles.linkText}>Pas encore de compte ? Inscrivez-vous</Text>
+            <Text style={[styles.linkText, { color: c.primary }]}>
+              Pas encore de compte ? <Text style={styles.linkBold}>Inscrivez-vous</Text>
+            </Text>
           </Pressable>
         </Link>
       </View>
@@ -128,34 +149,49 @@ export default function SignInScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#fff" },
-  inner: { flex: 1, justifyContent: "center", paddingHorizontal: 24 },
-  title: { fontSize: 32, fontWeight: "bold", textAlign: "center", marginBottom: 8 },
-  subtitle: { fontSize: 18, color: "#666", textAlign: "center", marginBottom: 32 },
+  container: { flex: 1 },
+  inner: { flex: 1, justifyContent: "center", paddingHorizontal: spacing.xl },
+  brand: {
+    fontSize: fonts.sizes.xxxl,
+    fontWeight: fonts.weights.heavy,
+    textAlign: "center",
+    marginBottom: spacing.xs,
+    letterSpacing: -1,
+  },
+  subtitle: {
+    fontSize: fonts.sizes.md,
+    textAlign: "center",
+    marginBottom: spacing.xxxl,
+  },
   input: {
     borderWidth: 1,
-    borderColor: "#ddd",
-    borderRadius: 8,
-    padding: 14,
-    fontSize: 16,
-    marginBottom: 12,
+    borderRadius: radii.md,
+    padding: spacing.base,
+    fontSize: fonts.sizes.base,
+    marginBottom: spacing.md,
   },
   button: {
-    backgroundColor: "#007AFF",
-    borderRadius: 8,
-    padding: 16,
+    borderRadius: radii.md,
+    padding: spacing.base,
     alignItems: "center",
-    marginTop: 8,
+    marginTop: spacing.sm,
   },
-  buttonText: { color: "#fff", fontSize: 16, fontWeight: "600" },
-  divider: { flexDirection: "row", alignItems: "center", marginVertical: 20 },
-  dividerLine: { flex: 1, height: 1, backgroundColor: "#ddd" },
-  dividerText: { marginHorizontal: 12, color: "#999", fontSize: 14 },
-  socialButton: { borderRadius: 8, padding: 16, alignItems: "center", marginBottom: 10 },
-  appleButton: { backgroundColor: "#000" },
-  appleButtonText: { color: "#fff", fontSize: 16, fontWeight: "600" },
-  googleButton: { backgroundColor: "#fff", borderWidth: 1, borderColor: "#ddd" },
-  googleButtonText: { color: "#333", fontSize: 16, fontWeight: "600" },
-  link: { marginTop: 16, alignItems: "center" },
-  linkText: { color: "#007AFF", fontSize: 14 },
+  buttonText: { fontSize: fonts.sizes.base, fontWeight: fonts.weights.semibold },
+  divider: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginVertical: spacing.xl,
+  },
+  dividerLine: { flex: 1, height: StyleSheet.hairlineWidth * 2 },
+  dividerText: { marginHorizontal: spacing.base, fontSize: fonts.sizes.sm },
+  socialButton: {
+    borderRadius: radii.md,
+    padding: spacing.base,
+    alignItems: "center",
+    marginBottom: spacing.sm,
+  },
+  socialText: { fontSize: fonts.sizes.base, fontWeight: fonts.weights.semibold },
+  link: { marginTop: spacing.lg, alignItems: "center" },
+  linkText: { fontSize: fonts.sizes.sm },
+  linkBold: { fontWeight: fonts.weights.semibold },
 });

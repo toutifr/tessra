@@ -1,0 +1,183 @@
+import { useEffect, useState } from "react";
+import {
+  ActivityIndicator,
+  Alert,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
+import { router, useLocalSearchParams } from "expo-router";
+import { supabase } from "../src/lib/supabase";
+import { getBalance } from "../src/lib/economy";
+import { purchaseTesselPack } from "../src/lib/purchases";
+import { TESSEL_PACKS, TesselPack } from "../src/constants/iap";
+import { track } from "../src/lib/track";
+import { useThemeColors, fonts, spacing, radii, shadows } from "../src/theme";
+
+function priceEur(pack: TesselPack): number {
+  return Number(pack.priceLabel.replace(",", ".").replace(/[^\d.]/g, ""));
+}
+
+// Bonus (%) vs pack S au même taux ⬡/€
+function bonusPercent(pack: TesselPack): number {
+  const base = TESSEL_PACKS[0];
+  const baseRate = base.tessels / priceEur(base);
+  const rate = pack.tessels / priceEur(pack);
+  return Math.round((rate / baseRate - 1) * 100);
+}
+
+export default function PaywallScreen() {
+  const { need } = useLocalSearchParams<{ need?: string }>();
+  const [balance, setBalance] = useState<number | null>(null);
+  const [buying, setBuying] = useState<string | null>(null);
+  const c = useThemeColors();
+
+  const needAmount = Number(need ?? 0);
+
+  useEffect(() => {
+    track("paywall_open", { need: needAmount || undefined });
+    (async () => {
+      try {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        if (user) setBalance(await getBalance(user.id));
+      } catch {
+        // solde indisponible
+      }
+    })();
+  }, []);
+
+  const handleBuy = async (sku: string) => {
+    if (buying) return;
+    setBuying(sku);
+    try {
+      const newBalance = await purchaseTesselPack(sku);
+      setBalance(newBalance);
+      track("purchase_success", { sku });
+      Alert.alert(
+        "Tessels ajoutés !",
+        `Ton nouveau solde : ${newBalance} ⬡`,
+        [{ text: "OK", onPress: () => router.back() }],
+      );
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "Achat impossible";
+      // Annulation utilisateur : silencieux
+      if (!/cancel|annul/i.test(msg)) {
+        Alert.alert("Erreur", msg);
+      }
+    } finally {
+      setBuying(null);
+    }
+  };
+
+  return (
+    <ScrollView
+      style={[styles.container, { backgroundColor: c.bg }]}
+      contentContainerStyle={styles.content}
+    >
+      <Text style={[styles.title, { color: c.text }]}>Recharge tes Tessels</Text>
+
+      <View style={[styles.balanceCard, { backgroundColor: c.primarySoft }]}>
+        <Text style={[styles.balanceLabel, { color: c.textSecondary }]}>Solde actuel</Text>
+        <Text style={[styles.balanceValue, { color: c.primary }]}>
+          {balance === null ? "…" : `${balance} ⬡`}
+        </Text>
+        {needAmount > 0 && (
+          <Text style={[styles.needText, { color: c.error }]}>
+            Il te manque {needAmount} ⬡
+          </Text>
+        )}
+      </View>
+
+      <View style={styles.packs}>
+        {TESSEL_PACKS.map((pack) => {
+          const bonus = bonusPercent(pack);
+          const isBuying = buying === pack.sku;
+          return (
+            <Pressable
+              key={pack.sku}
+              style={({ pressed }) => [
+                styles.packCard,
+                { backgroundColor: c.card, borderColor: c.cardBorder, opacity: pressed || isBuying ? 0.8 : 1 },
+                shadows.sm,
+              ]}
+              onPress={() => handleBuy(pack.sku)}
+              disabled={!!buying}
+            >
+              <View style={styles.packLeft}>
+                <Text style={[styles.packTessels, { color: c.text }]}>
+                  {pack.tessels} ⬡
+                </Text>
+                {bonus > 0 && (
+                  <View style={[styles.bonusBadge, { backgroundColor: c.primary }]}>
+                    <Text style={[styles.bonusText, { color: c.primaryText }]}>+{bonus}%</Text>
+                  </View>
+                )}
+              </View>
+              {isBuying ? (
+                <ActivityIndicator color={c.primary} />
+              ) : (
+                <View style={[styles.priceChip, { backgroundColor: c.bgTertiary }]}>
+                  <Text style={[styles.priceText, { color: c.text }]}>{pack.priceLabel}</Text>
+                </View>
+              )}
+            </Pressable>
+          );
+        })}
+      </View>
+
+      <Pressable style={styles.cancelButton} onPress={() => router.back()}>
+        <Text style={[styles.cancelText, { color: c.textTertiary }]}>Plus tard</Text>
+      </Pressable>
+    </ScrollView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1 },
+  content: { padding: spacing.xl, paddingBottom: 40 },
+  title: {
+    fontSize: fonts.sizes.xxl,
+    fontWeight: fonts.weights.bold,
+    textAlign: "center",
+    marginBottom: spacing.lg,
+    letterSpacing: -0.5,
+  },
+  balanceCard: {
+    borderRadius: radii.lg,
+    padding: spacing.lg,
+    alignItems: "center",
+    marginBottom: spacing.xl,
+  },
+  balanceLabel: { fontSize: fonts.sizes.sm },
+  balanceValue: { fontSize: 34, fontWeight: fonts.weights.heavy, marginTop: spacing.xs },
+  needText: { fontSize: fonts.sizes.sm, fontWeight: fonts.weights.semibold, marginTop: spacing.sm },
+  packs: { gap: spacing.md },
+  packCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    borderWidth: 1,
+    borderRadius: radii.md,
+    padding: spacing.base,
+  },
+  packLeft: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
+  packTessels: { fontSize: fonts.sizes.xl, fontWeight: fonts.weights.bold },
+  bonusBadge: {
+    borderRadius: radii.full,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+  },
+  bonusText: { fontSize: fonts.sizes.xs, fontWeight: fonts.weights.bold },
+  priceChip: {
+    borderRadius: radii.full,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs + 2,
+  },
+  priceText: { fontSize: fonts.sizes.base, fontWeight: fonts.weights.semibold },
+  cancelButton: { marginTop: spacing.xl, alignItems: "center" },
+  cancelText: { fontSize: fonts.sizes.base },
+});

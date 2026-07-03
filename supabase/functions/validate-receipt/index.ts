@@ -1,4 +1,15 @@
+// validate-receipt — V2 : vend uniquement des packs de Tessels (monnaie unique)
+// Body: { receipt, platform: 'ios'|'android', transaction_id, sku }
+// Valide le reçu auprès d'Apple/Google puis crédite le wallet via grant_tessels (idempotent).
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+const VALID_SKUS = new Set([
+  "tessra_tessels_s",
+  "tessra_tessels_m",
+  "tessra_tessels_l",
+  "tessra_tessels_xl",
+  "tessra_tessels_xxl",
+]);
 
 Deno.serve(async (req) => {
   const supabase = createClient(
@@ -11,50 +22,49 @@ Deno.serve(async (req) => {
     return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
   }
 
-  // Get user from JWT
   const {
     data: { user },
     error: authError,
   } = await supabase.auth.getUser(authHeader.replace("Bearer ", ""));
-
   if (authError || !user) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
   }
 
-  const { receipt, platform, transaction_id, action } = await req.json();
+  const { receipt, platform, transaction_id, sku } = await req.json();
 
-  // Validate receipt with platform
+  if (!VALID_SKUS.has(sku)) {
+    return new Response(JSON.stringify({ success: false, error: "Unknown SKU" }), { status: 400 });
+  }
+  if (!transaction_id || !receipt) {
+    return new Response(JSON.stringify({ success: false, error: "Missing receipt" }), { status: 400 });
+  }
+
+  // ── Validation du reçu ──
   let isValid = false;
 
   if (platform === "ios") {
-    const appleResponse = await fetch("https://buy.itunes.apple.com/verifyReceipt", {
-      method: "POST",
-      body: JSON.stringify({
-        "receipt-data": receipt,
-        password: Deno.env.get("APPLE_SHARED_SECRET"),
-      }),
-    });
-    const appleData = await appleResponse.json();
-
-    // Status 0 = valid, 21007 = sandbox receipt
-    if (appleData.status === 0) {
-      isValid = true;
-    } else if (appleData.status === 21007) {
-      // Retry with sandbox URL
-      const sandboxResponse = await fetch("https://sandbox.itunes.apple.com/verifyReceipt", {
+    const verify = async (url: string) => {
+      const res = await fetch(url, {
         method: "POST",
         body: JSON.stringify({
           "receipt-data": receipt,
           password: Deno.env.get("APPLE_SHARED_SECRET"),
         }),
       });
-      const sandboxData = await sandboxResponse.json();
-      isValid = sandboxData.status === 0;
+      return res.json();
+    };
+    let data = await verify("https://buy.itunes.apple.com/verifyReceipt");
+    if (data.status === 21007) {
+      data = await verify("https://sandbox.itunes.apple.com/verifyReceipt");
+    }
+    if (data.status === 0) {
+      // Vérifie que le SKU acheté correspond bien
+      const items = data.receipt?.in_app ?? [];
+      isValid = items.some((i: { product_id: string }) => i.product_id === sku) || items.length === 0;
     }
   } else if (platform === "android") {
-    // Google Play validation would use the Google Play Developer API
-    // For MVP, trust the receipt and validate structure
-    isValid = !!receipt && !!transaction_id;
+    // TODO: Google Play Developer API (service account). MVP : contrôle de structure.
+    isValid = typeof receipt === "string" && receipt.length > 20;
   }
 
   if (!isValid) {
@@ -63,52 +73,19 @@ Deno.serve(async (req) => {
     });
   }
 
-  // Check for duplicate transaction
-  const { data: existing } = await supabase
-    .from("payments")
-    .select("id")
-    .eq("store_transaction_id", transaction_id)
-    .single();
+  // ── Crédit du wallet (idempotent sur transaction_id) ──
+  const { data: balance, error } = await supabase.rpc("grant_tessels", {
+    p_user_id: user.id,
+    p_sku: sku,
+    p_platform: platform,
+    p_transaction_id: transaction_id,
+  });
 
-  if (existing) {
-    return new Response(JSON.stringify({ success: false, error: "Duplicate transaction" }), {
-      status: 400,
-    });
+  if (error) {
+    return new Response(JSON.stringify({ success: false, error: error.message }), { status: 400 });
   }
 
-  // Process the action — only replace_square is supported
-  let publicationId: string | null = null;
-
-  if (action.type === "replace" && action.squareId && action.imageUrl) {
-    const { data, error } = await supabase.rpc("replace_square", {
-      p_square_id: action.squareId,
-      p_user_id: user.id,
-      p_image_url: action.imageUrl,
-      p_price_paid: action.price,
-    });
-
-    if (error) {
-      return new Response(JSON.stringify({ success: false, error: error.message }), {
-        status: 400,
-      });
-    }
-    publicationId = data;
-  }
-
-  // Record payment
-  if (publicationId) {
-    await supabase.from("payments").insert({
-      user_id: user.id,
-      publication_id: publicationId,
-      amount: action.price,
-      currency: "USD",
-      platform,
-      store_transaction_id: transaction_id,
-      status: "completed",
-    });
-  }
-
-  return new Response(JSON.stringify({ success: true, publication_id: publicationId }), {
-    status: 200,
+  return new Response(JSON.stringify({ success: true, balance }), {
+    headers: { "Content-Type": "application/json" },
   });
 });

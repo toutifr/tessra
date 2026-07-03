@@ -1,46 +1,26 @@
-import { Platform } from "react-native";
+// Économie V2 — monnaie unique : le Tessel (⬡)
+// IAP = packs de Tessels consommables uniquement.
 
-// Tiered consumable products for square replacement
-// Each SKU corresponds to a price tier
-export const REPLACE_SKUS = Platform.select({
-  ios: [
-    "tessra_replace_1",
-    "tessra_replace_2",
-    "tessra_replace_3",
-    "tessra_replace_5",
-    "tessra_replace_10",
-    "tessra_replace_20",
-    "tessra_replace_50",
-  ],
-  android: [
-    "tessra_replace_1",
-    "tessra_replace_2",
-    "tessra_replace_3",
-    "tessra_replace_5",
-    "tessra_replace_10",
-    "tessra_replace_20",
-    "tessra_replace_50",
-  ],
-  default: [],
-}) as string[];
-
-// Map SKU to price value
-export const SKU_PRICES: Record<string, number> = {
-  tessra_replace_1: 1,
-  tessra_replace_2: 2,
-  tessra_replace_3: 3,
-  tessra_replace_5: 5,
-  tessra_replace_10: 10,
-  tessra_replace_20: 20,
-  tessra_replace_50: 50,
-};
-
-// Find the best SKU for a given price (nearest tier >= price)
-export function skuForPrice(price: number): string | null {
-  const tiers = [1, 2, 3, 5, 10, 20, 50];
-  const tier = tiers.find((t) => t >= price);
-  if (!tier) return null;
-  return `tessra_replace_${tier}`;
+export interface TesselPack {
+  sku: string;
+  tessels: number;
+  priceLabel: string;
 }
 
-export const IAP_SKUS = REPLACE_SKUS;
+export const TESSEL_PACKS: TesselPack[] = [
+  { sku: "tessra_tessels_s", tessels: 300, priceLabel: "2,99 €" },
+  { sku: "tessra_tessels_m", tessels: 1200, priceLabel: "9,99 €" },
+  { sku: "tessra_tessels_l", tessels: 2800, priceLabel: "19,99 €" },
+  { sku: "tessra_tessels_xl", tessels: 8000, priceLabel: "49,99 €" },
+  { sku: "tessra_tessels_xxl", tessels: 18000, priceLabel: "99,99 €" },
+];
+
+export const IAP_SKUS: string[] = TESSEL_PACKS.map((p) => p.sku);
+
+/**
+ * Prix minimum (en Tessels) pour prendre une case occupée.
+ * lastPrice = squares.last_price (INTEGER, en tessels).
+ */
+export function minTakePrice(lastPrice: number): number {
+  return Math.min(10000, Math.max(100, Math.ceil((lastPrice * 1.5) / 10) * 10));
+}

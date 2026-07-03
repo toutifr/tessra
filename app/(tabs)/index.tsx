@@ -135,8 +135,6 @@ export default function MapScreen() {
           centerCoordinate={center}
         />
 
-        {userLocation && <MapboxGL.UserLocation visible />}
-
         {/* Photos rendues dans les tuiles — visibles à TOUS les zooms */}
         <TileLayer />
 
@@ -189,6 +187,9 @@ export default function MapScreen() {
             </MapboxGL.ImageSource>
           );
         })()}
+
+        {/* User location marker — rendered last so it's on top of all layers */}
+        {userLocation && <MapboxGL.UserLocation visible />}
       </MapboxGL.MapView>
     </View>
   );
