@@ -12,6 +12,10 @@ bucket_name = "tessra-tiles"
 TILE_SIZE = "512"
 MAX_ZOOM = "14"
 
+# Cron : régénération des zooms bas (z8 → z0) par lot — évite le hot-spot z0
+[triggers]
+crons = ["*/10 * * * *"]
+
 # Secrets (set via `npx wrangler secret put <NAME>`):
 # WEBHOOK_SECRET       — shared secret with Supabase trigger
 # SUPABASE_URL         — https://epqxxzdfmsuunxlcizkj.supabase.co

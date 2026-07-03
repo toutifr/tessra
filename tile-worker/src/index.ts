@@ -5,7 +5,7 @@
 import type { Env, TileCoord, WebhookPayload } from "./types";
 import { latLngToTile, tilePath, cellsInTile, tileKey } from "./tile-math";
 import { renderBaseTile, composeTile, fetchAndDecodeImage } from "./render";
-import { propagateUp } from "./propagate";
+import { propagateUp, propagateLevels, processDirtyTiles } from "./propagate";
 
 const MAX_ZOOM = 14;
 
@@ -34,6 +34,17 @@ export default {
         return handleClear(env);
       }
 
+      // Déclenchement manuel du traitement des tuiles dirty (sinon: cron)
+      if (request.method === "POST" && url.pathname === "/run-dirty") {
+        if (request.headers.get("Authorization") !== `Bearer ${env.WEBHOOK_SECRET}`) {
+          return new Response("Unauthorized", { status: 401 });
+        }
+        const regenerated = await processDirtyTiles(env);
+        return new Response(JSON.stringify({ ok: true, regenerated }), {
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
       if (url.pathname === "/health") {
         return new Response(JSON.stringify({ ok: true }), {
           headers: { "Content-Type": "application/json" },
@@ -47,6 +58,15 @@ export default {
         status: 500, headers: { "Content-Type": "application/json" },
       });
     }
+  },
+
+  // Cron : régénère les zooms bas (z8 → z0) à partir des marqueurs dirty.
+  async scheduled(_event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
+    ctx.waitUntil(
+      processDirtyTiles(env).then((n) => {
+        if (n > 0) console.log(`[cron] ${n} low-zoom tiles regenerated`);
+      }),
+    );
   },
 };
 
@@ -140,10 +160,14 @@ async function handleSeed(env: Env): Promise<Response> {
       tilesGenerated++;
     }
 
-    // Propagate ALL z14 tiles up the pyramid
-    for (const tile of z14tiles) {
-      await propagateUp(tile, env);
+    // Propagation dédoublonnée niveau par niveau (z13 → z0) :
+    // chaque tuile parente n'est régénérée qu'une seule fois.
+    const parents = new Map<string, TileCoord>();
+    for (const t of z14tiles) {
+      const p = { z: t.z - 1, x: Math.floor(t.x / 2), y: Math.floor(t.y / 2) };
+      parents.set(tileKey(p), p);
     }
+    await propagateLevels([...parents.values()], env);
 
     return new Response(JSON.stringify({
       ok: true,
