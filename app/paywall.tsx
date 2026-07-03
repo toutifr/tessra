@@ -9,13 +9,15 @@ import {
   View,
 } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
-import { supabase } from "../src/lib/supabase";
 import { getBalance } from "../src/lib/economy";
 import { purchaseTesselPack } from "../src/lib/purchases";
 import { TESSEL_PACKS, TesselPack } from "../src/constants/iap";
+import { useSWR, mutate, invalidate } from "../src/lib/swr";
+import { useAuth } from "../src/providers/AuthProvider";
 import { track } from "../src/lib/track";
 import { hapticSuccess } from "../src/lib/haptics";
 import AnimatedNumber from "../src/components/AnimatedNumber";
+import PressableScale from "../src/components/PressableScale";
 import { useThemeColors, fonts, spacing, radii, shadows } from "../src/theme";
 
 function priceEur(pack: TesselPack): number {
@@ -32,24 +34,23 @@ function bonusPercent(pack: TesselPack): number {
 
 export default function PaywallScreen() {
   const { need } = useLocalSearchParams<{ need?: string }>();
-  const [balance, setBalance] = useState<number | null>(null);
+  const { session } = useAuth();
+  const uid = session?.user.id ?? null;
   const [buying, setBuying] = useState<string | null>(null);
   const c = useThemeColors();
 
   const needAmount = Number(need ?? 0);
 
+  // Solde depuis le cache — affiché instantanément, refetch en fond
+  const { data: balance } = useSWR<number>(
+    uid ? `balance:${uid}` : null,
+    () => getBalance(uid!),
+    15000,
+  );
+
   useEffect(() => {
     track("paywall_open", { need: needAmount || undefined });
-    (async () => {
-      try {
-        const {
-          data: { user },
-        } = await supabase.auth.getUser();
-        if (user) setBalance(await getBalance(user.id));
-      } catch {
-        // solde indisponible
-      }
-    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleBuy = async (sku: string) => {
@@ -58,7 +59,10 @@ export default function PaywallScreen() {
     try {
       const newBalance = await purchaseTesselPack(sku);
       hapticSuccess();
-      setBalance(newBalance);
+      if (uid) {
+        mutate(`balance:${uid}`, newBalance);
+        invalidate(`stats:${uid}`);
+      }
       track("purchase_success", { sku });
       Alert.alert(
         "Reis ajoutés !",
@@ -85,7 +89,7 @@ export default function PaywallScreen() {
 
       <View style={[styles.balanceCard, { backgroundColor: c.primarySoft }]}>
         <Text style={[styles.balanceLabel, { color: c.textSecondary }]}>Solde actuel</Text>
-        {balance === null ? (
+        {balance == null ? (
           <Text style={[styles.balanceValue, { color: c.primary }]}>…</Text>
         ) : (
           <AnimatedNumber
@@ -106,11 +110,11 @@ export default function PaywallScreen() {
           const bonus = bonusPercent(pack);
           const isBuying = buying === pack.sku;
           return (
-            <Pressable
+            <PressableScale
               key={pack.sku}
-              style={({ pressed }) => [
+              style={[
                 styles.packCard,
-                { backgroundColor: c.card, borderColor: c.cardBorder, opacity: pressed || isBuying ? 0.8 : 1 },
+                { backgroundColor: c.card, borderColor: c.cardBorder, opacity: isBuying ? 0.8 : 1 },
                 shadows.sm,
               ]}
               onPress={() => handleBuy(pack.sku)}
@@ -133,7 +137,7 @@ export default function PaywallScreen() {
                   <Text style={[styles.priceText, { color: c.text }]}>{pack.priceLabel}</Text>
                 </View>
               )}
-            </Pressable>
+            </PressableScale>
           );
         })}
       </View>

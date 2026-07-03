@@ -42,6 +42,10 @@ export const palette = {
   bronze:      "#CD7F32",
   silver:      "#C0C0C0",
   gold:        "#FFD700",
+
+  // Accent — or adouci (récompenses, highlights)
+  accent:      "#F2B441",
+  accentSoft:  "#FDF3DC",
 } as const;
 
 // ─── Theme Tokens ─────────────────────────────────────────
@@ -63,6 +67,10 @@ export interface ThemeColors {
   primary:       string;
   primarySoft:   string;
   primaryText:   string;
+
+  // Accent (or)
+  accent:        string;
+  accentSoft:    string;
 
   // Semantic
   success:       string;
@@ -95,6 +103,9 @@ const lightColors: ThemeColors = {
   primarySoft:   palette.coralSoft,
   primaryText:   palette.white,
 
+  accent:        palette.accent,
+  accentSoft:    palette.accentSoft,
+
   success:       palette.success,
   warning:       palette.warning,
   error:         palette.error,
@@ -123,6 +134,9 @@ const darkColors: ThemeColors = {
   primary:       palette.coralLight,
   primarySoft:   "rgba(255,107,107,0.15)",
   primaryText:   palette.white,
+
+  accent:        palette.accent,
+  accentSoft:    "rgba(242,180,65,0.15)",
 
   success:       palette.success,
   warning:       palette.warning,
@@ -189,9 +203,9 @@ export const spacing = {
 // ─── Radii ────────────────────────────────────────────────
 export const radii = {
   sm:   8,
-  md:   12,
-  lg:   16,
-  xl:   20,
+  md:   14,
+  lg:   20,
+  xl:   24,
   full: 9999,
 } as const;
 

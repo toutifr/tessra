@@ -5,6 +5,9 @@ import { AuthProvider, useAuth } from "../src/providers/AuthProvider";
 import { useOnboarding } from "../src/hooks/useOnboarding";
 import OnboardingScreen from "../src/components/OnboardingScreen";
 import { registerForPushNotifications } from "../src/lib/notifications";
+import { prefetch } from "../src/lib/swr";
+import { getDailyQuests, getFeed, getGameState } from "../src/lib/economy";
+import { fetchUserStats } from "../src/hooks/useUserStats";
 import { useThemeColors } from "../src/theme";
 
 function RootLayoutInner() {
@@ -16,6 +19,12 @@ function RootLayoutInner() {
   useEffect(() => {
     if (session) {
       registerForPushNotifications().catch(() => {});
+      // Préchauffage fire-and-forget : les onglets arrivent déjà chauds
+      const uid = session.user.id;
+      prefetch(`stats:${uid}`, () => fetchUserStats(uid), 30000);
+      prefetch(`quests:${uid}`, () => getDailyQuests(uid), 60000);
+      prefetch(`feed:${uid}`, () => getFeed(uid), 30000);
+      prefetch("gameState", getGameState, 30000);
     }
   }, [session]);
 

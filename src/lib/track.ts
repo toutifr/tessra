@@ -1,4 +1,4 @@
-import { supabase } from "./supabase";
+import { supabase, getCachedUser } from "./supabase";
 
 /**
  * Analytics fire-and-forget : insert dans public.events.
@@ -9,7 +9,7 @@ export function track(name: string, props?: object): void {
     try {
       const {
         data: { user },
-      } = await supabase.auth.getUser();
+      } = await getCachedUser();
       if (!user) return;
       await supabase.from("events").insert({
         user_id: user.id,

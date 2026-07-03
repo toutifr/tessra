@@ -2,12 +2,36 @@ import { Tabs } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useThemeColors, fonts } from "../../src/theme";
 
+type IconName = keyof typeof Ionicons.glyphMap;
+
+function tabIcon(filled: IconName, outline: IconName) {
+  return function TabIcon({
+    color,
+    size,
+    focused,
+  }: {
+    color: string;
+    size: number;
+    focused: boolean;
+  }) {
+    return (
+      <Ionicons
+        name={focused ? filled : outline}
+        size={focused ? size + 2 : size}
+        color={color}
+      />
+    );
+  };
+}
+
 export default function TabLayout() {
   const c = useThemeColors();
 
   return (
     <Tabs
       screenOptions={{
+        // Les 4 onglets restent montés → switch instantané, zéro reload visible
+        lazy: false,
         tabBarActiveTintColor: c.primary,
         tabBarInactiveTintColor: c.textTertiary,
         headerShown: false,
@@ -27,9 +51,8 @@ export default function TabLayout() {
         options={{
           title: "Carte",
           tabBarLabel: "Carte",
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="map-outline" size={size} color={color} />
-          ),
+          // Pas de freezeOnBlur sur la carte (Mapbox) — prudence
+          tabBarIcon: tabIcon("map", "map-outline"),
         }}
       />
       <Tabs.Screen
@@ -37,9 +60,8 @@ export default function TabLayout() {
         options={{
           title: "Découvrir",
           tabBarLabel: "Découvrir",
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="compass-outline" size={size} color={color} />
-          ),
+          freezeOnBlur: true,
+          tabBarIcon: tabIcon("compass", "compass-outline"),
         }}
       />
       <Tabs.Screen
@@ -47,9 +69,8 @@ export default function TabLayout() {
         options={{
           title: "Historique",
           tabBarLabel: "Historique",
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="time-outline" size={size} color={color} />
-          ),
+          freezeOnBlur: true,
+          tabBarIcon: tabIcon("time", "time-outline"),
         }}
       />
       <Tabs.Screen
@@ -57,9 +78,8 @@ export default function TabLayout() {
         options={{
           title: "Profil",
           tabBarLabel: "Profil",
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="person-outline" size={size} color={color} />
-          ),
+          freezeOnBlur: true,
+          tabBarIcon: tabIcon("person", "person-outline"),
         }}
       />
     </Tabs>

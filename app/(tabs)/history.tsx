@@ -1,16 +1,19 @@
-import { useCallback, useEffect, useState } from "react";
+import { memo, useCallback, useState } from "react";
 import {
-  ActivityIndicator,
   FlatList,
-  Image,
   Pressable,
   RefreshControl,
   StyleSheet,
   Text,
   View,
 } from "react-native";
+import { useFocusEffect } from "expo-router";
+import { Image } from "expo-image";
 import { supabase } from "../../src/lib/supabase";
-import { useThemeColors, fonts, spacing, radii, shadows } from "../../src/theme";
+import { useSWR } from "../../src/lib/swr";
+import { useAuth } from "../../src/providers/AuthProvider";
+import { ListSkeleton } from "../../src/components/Skeleton";
+import { useThemeColors, fonts, spacing, radii, shadows, ThemeColors } from "../../src/theme";
 
 interface HistoryEntry {
   id: string;
@@ -35,99 +38,133 @@ const MODE_LABELS: Record<string, string> = {
 
 type FilterType = "all" | "active" | "replaced";
 
+async function fetchHistory(uid: string, filter: FilterType): Promise<HistoryEntry[]> {
+  // Try publication_history first
+  let query = supabase
+    .from("publication_history")
+    .select("id, image_url, started_at, ended_at, status, acquisition_mode")
+    .eq("user_id", uid)
+    .order("started_at", { ascending: false });
+
+  if (filter !== "all") {
+    query = query.eq("status", filter);
+  }
+
+  const { data } = await query;
+  if (data && data.length > 0) return data as HistoryEntry[];
+
+  // Fallback: query publications directly
+  let pubQuery = supabase
+    .from("publications")
+    .select("id, image_url, created_at, status")
+    .eq("user_id", uid)
+    .order("created_at", { ascending: false });
+
+  if (filter !== "all") {
+    pubQuery = pubQuery.eq("status", filter);
+  }
+
+  const { data: pubData } = await pubQuery;
+  if (!pubData) return [];
+  return pubData.map((p: any) => ({
+    id: p.id,
+    image_url: p.image_url,
+    started_at: p.created_at,
+    ended_at: null,
+    status: p.status,
+    acquisition_mode: p.price_paid ? "paid" : "free",
+  }));
+}
+
+function formatDate(dateStr: string) {
+  return new Date(dateStr).toLocaleDateString("fr-FR", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+const HistoryCard = memo(function HistoryCard({
+  item,
+  c,
+}: {
+  item: HistoryEntry;
+  c: ThemeColors;
+}) {
+  return (
+    <View style={[styles.card, { backgroundColor: c.card, borderColor: c.cardBorder }, shadows.sm]}>
+      <Image
+        source={{ uri: item.image_url }}
+        style={styles.thumbnail}
+        contentFit="cover"
+        transition={150}
+        cachePolicy="memory-disk"
+        recyclingKey={item.id}
+      />
+      <View style={styles.cardInfo}>
+        <View style={styles.cardTop}>
+          <Text style={[styles.cardStatus, { color: c.text }]}>
+            {STATUS_LABELS[item.status] ?? item.status}
+          </Text>
+          <View style={[
+            styles.modeBadge,
+            { backgroundColor: item.status === "active" ? c.primarySoft : c.bgTertiary },
+          ]}>
+            <Text style={[
+              styles.modeText,
+              { color: item.status === "active" ? c.primary : c.textTertiary },
+            ]}>
+              {MODE_LABELS[item.acquisition_mode] ?? item.acquisition_mode}
+            </Text>
+          </View>
+        </View>
+        <Text style={[styles.cardDate, { color: c.textTertiary }]}>{formatDate(item.started_at)}</Text>
+        {item.ended_at && (
+          <Text style={[styles.cardDate, { color: c.textTertiary }]}>Fin: {formatDate(item.ended_at)}</Text>
+        )}
+      </View>
+    </View>
+  );
+});
+
 export default function HistoryScreen() {
-  const [entries, setEntries] = useState<HistoryEntry[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
+  const { session } = useAuth();
+  const uid = session?.user.id ?? null;
   const [filter, setFilter] = useState<FilterType>("all");
+  const [refreshing, setRefreshing] = useState(false);
   const c = useThemeColors();
 
-  const loadHistory = useCallback(async () => {
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (!user) return;
+  const key = uid ? `history:${uid}:${filter}` : null;
+  const { data: entries = [], loading, refresh } = useSWR<HistoryEntry[]>(
+    key,
+    () => fetchHistory(uid!, filter),
+    30000,
+  );
 
-    // Try publication_history first
-    let query = supabase
-      .from("publication_history")
-      .select("id, image_url, started_at, ended_at, status, acquisition_mode")
-      .eq("user_id", user.id)
-      .order("started_at", { ascending: false });
-
-    if (filter !== "all") {
-      query = query.eq("status", filter);
-    }
-
-    const { data, error } = await query;
-
-    if (data && data.length > 0) {
-      setEntries(data as HistoryEntry[]);
-      return;
-    }
-
-    // Fallback: query publications directly
-    let pubQuery = supabase
-      .from("publications")
-      .select("id, image_url, created_at, status")
-      .eq("user_id", user.id)
-      .order("created_at", { ascending: false });
-
-    if (filter !== "all") {
-      pubQuery = pubQuery.eq("status", filter);
-    }
-
-    const { data: pubData } = await pubQuery;
-    if (pubData && pubData.length > 0) {
-      setEntries(
-        pubData.map((p: any) => ({
-          id: p.id,
-          image_url: p.image_url,
-          started_at: p.created_at,
-          ended_at: null,
-          status: p.status,
-          acquisition_mode: p.price_paid ? "paid" : "free",
-        })),
-      );
-    } else {
-      setEntries([]);
-    }
-  }, [filter]);
-
-  useEffect(() => {
-    setLoading(true);
-    loadHistory().finally(() => setLoading(false));
-  }, [loadHistory]);
+  useFocusEffect(
+    useCallback(() => {
+      refresh();
+    }, [refresh]),
+  );
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await loadHistory();
+    await refresh();
     setRefreshing(false);
   };
 
-  const formatDate = (dateStr: string) => {
-    return new Date(dateStr).toLocaleDateString("fr-FR", {
-      day: "numeric",
-      month: "short",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  };
+  const renderItem = useCallback(
+    ({ item }: { item: HistoryEntry }) => <HistoryCard item={item} c={c} />,
+    [c],
+  );
 
   const filters: { key: FilterType; label: string }[] = [
     { key: "all", label: "Tout" },
     { key: "active", label: "Actif" },
     { key: "replaced", label: "Remplacé" },
   ];
-
-  if (loading) {
-    return (
-      <View style={[styles.loading, { backgroundColor: c.bg }]}>
-        <ActivityIndicator size="large" color={c.primary} />
-      </View>
-    );
-  }
 
   return (
     <View style={[styles.container, { backgroundColor: c.bg }]}>
@@ -155,53 +192,34 @@ export default function HistoryScreen() {
         ))}
       </View>
 
-      <FlatList
-        data={entries}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.list}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={c.primary} />
-        }
-        ListEmptyComponent={
-          <View style={styles.empty}>
-            <Text style={[styles.emptyText, { color: c.textTertiary }]}>Aucune publication</Text>
-          </View>
-        }
-        renderItem={({ item }) => (
-          <View style={[styles.card, { backgroundColor: c.card, borderColor: c.cardBorder }, shadows.sm]}>
-            <Image source={{ uri: item.image_url }} style={styles.thumbnail} />
-            <View style={styles.cardInfo}>
-              <View style={styles.cardTop}>
-                <Text style={[styles.cardStatus, { color: c.text }]}>
-                  {STATUS_LABELS[item.status] ?? item.status}
-                </Text>
-                <View style={[
-                  styles.modeBadge,
-                  { backgroundColor: item.status === "active" ? c.primarySoft : c.bgTertiary },
-                ]}>
-                  <Text style={[
-                    styles.modeText,
-                    { color: item.status === "active" ? c.primary : c.textTertiary },
-                  ]}>
-                    {MODE_LABELS[item.acquisition_mode] ?? item.acquisition_mode}
-                  </Text>
-                </View>
-              </View>
-              <Text style={[styles.cardDate, { color: c.textTertiary }]}>{formatDate(item.started_at)}</Text>
-              {item.ended_at && (
-                <Text style={[styles.cardDate, { color: c.textTertiary }]}>Fin: {formatDate(item.ended_at)}</Text>
-              )}
+      {loading && entries.length === 0 ? (
+        <ListSkeleton rows={6} />
+      ) : (
+        <FlatList
+          data={entries}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={styles.list}
+          renderItem={renderItem}
+          windowSize={7}
+          maxToRenderPerBatch={6}
+          initialNumToRender={8}
+          removeClippedSubviews
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={c.primary} />
+          }
+          ListEmptyComponent={
+            <View style={styles.empty}>
+              <Text style={[styles.emptyText, { color: c.textTertiary }]}>Aucune publication</Text>
             </View>
-          </View>
-        )}
-      />
+          }
+        />
+      )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  loading: { flex: 1, justifyContent: "center", alignItems: "center" },
   title: {
     fontSize: fonts.sizes.xxl,
     fontWeight: fonts.weights.bold,

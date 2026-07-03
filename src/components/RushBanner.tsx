@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { StyleSheet, Text, View, ViewStyle } from "react-native";
 import { getGameState, GameState } from "../lib/economy";
+import { useSWR } from "../lib/swr";
 import { useThemeColors, fonts, spacing, radii, shadows } from "../theme";
 
 const RUSH_COLOR = "#FF6B35";
@@ -17,24 +18,12 @@ function pad(n: number): string {
  */
 export default function RushBanner({ style }: { style?: ViewStyle }) {
   const c = useThemeColors();
-  const [state, setState] = useState<GameState | null>(null);
+  // Cache partagé ("gameState") — servi instantanément, refetch en fond
+  const { data, refresh } = useSWR<GameState>("gameState", getGameState, 30000);
+  const state = data ?? null;
   const [now, setNow] = useState(Date.now());
-  const fetching = useRef(false);
-
-  const fetchState = async () => {
-    if (fetching.current) return;
-    fetching.current = true;
-    try {
-      setState(await getGameState());
-    } catch {
-      // silencieux
-    } finally {
-      fetching.current = false;
-    }
-  };
 
   useEffect(() => {
-    fetchState();
     const t = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(t);
   }, []);
@@ -48,8 +37,8 @@ export default function RushBanner({ style }: { style?: ViewStyle }) {
       (!state.rush_active && new Date(state.next_rush_at).getTime() - now <= 0));
 
   useEffect(() => {
-    if (expired) fetchState();
-  }, [expired]);
+    if (expired) refresh();
+  }, [expired, refresh]);
 
   if (!state) return null;
 

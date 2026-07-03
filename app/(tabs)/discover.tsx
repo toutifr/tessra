@@ -1,10 +1,9 @@
-import { useCallback, useEffect, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
   Dimensions,
   FlatList,
-  Image,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -13,7 +12,8 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { router } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
+import { Image } from "expo-image";
 import { supabase } from "../../src/lib/supabase";
 import {
   claimQuest,
@@ -32,7 +32,11 @@ import {
   TeamChallenge,
   TeamRow,
 } from "../../src/lib/economy";
+import { useSWR, mutate, getCached, invalidate } from "../../src/lib/swr";
+import { useAuth } from "../../src/providers/AuthProvider";
 import RushBanner from "../../src/components/RushBanner";
+import PressableScale from "../../src/components/PressableScale";
+import { FeedSkeleton, ListSkeleton } from "../../src/components/Skeleton";
 import { track } from "../../src/lib/track";
 import { hapticLight, hapticSuccess } from "../../src/lib/haptics";
 import { useThemeColors, fonts, spacing, radii, shadows, palette, ThemeColors } from "../../src/theme";
@@ -67,31 +71,181 @@ function remainingLabel(iso: string): string {
   return `${h} h ${m} min`;
 }
 
+interface TeamData {
+  challenge: TeamChallenge;
+  teams: TeamRow[];
+}
+
+// ─── Carte du feed (memoïsée) ─────────────────────────────
+const FeedCard = memo(function FeedCard({
+  item,
+  userId,
+  c,
+  onVote,
+  onOpen,
+}: {
+  item: FeedItem;
+  userId: string | null;
+  c: ThemeColors;
+  onVote: (item: FeedItem) => void;
+  onOpen: (squareId: string) => void;
+}) {
+  const canVote = !item.has_voted && item.owner_id !== userId;
+  return (
+    <View style={[styles.card, { backgroundColor: c.bgSecondary }]}>
+      {/* Header */}
+      <View style={styles.cardHeader}>
+        {item.avatar_url ? (
+          <Image
+            source={{ uri: item.avatar_url }}
+            style={styles.cardAvatar}
+            contentFit="cover"
+            transition={150}
+            cachePolicy="memory-disk"
+            recyclingKey={item.publication_id}
+          />
+        ) : (
+          <View style={[styles.cardAvatar, styles.avatarFallback, { backgroundColor: c.primary }]}>
+            <Text style={styles.avatarInitial}>
+              {item.username?.charAt(0).toUpperCase() ?? "?"}
+            </Text>
+          </View>
+        )}
+        <View style={styles.cardHeaderText}>
+          <Text style={[styles.cardUsername, { color: c.text }]} numberOfLines={1}>
+            {item.username}
+          </Text>
+          <Text style={[styles.cardTime, { color: c.textTertiary }]}>
+            {relativeTime(item.created_at)}
+          </Text>
+        </View>
+        {item.is_shielded && (
+          <View style={[styles.shieldBadge, { backgroundColor: `${palette.warning}20` }]}>
+            <Text style={[styles.shieldBadgeText, { color: palette.warning }]}>🛡️ Protégée</Text>
+          </View>
+        )}
+      </View>
+
+      {/* Image */}
+      <Pressable onPress={() => onOpen(item.square_id)}>
+        <Image
+          source={{ uri: item.image_url }}
+          style={styles.cardImage}
+          contentFit="cover"
+          transition={150}
+          cachePolicy="memory-disk"
+          recyclingKey={item.publication_id}
+        />
+      </Pressable>
+
+      {/* Footer */}
+      <View style={styles.cardFooter}>
+        <Pressable
+          style={({ pressed }) => [
+            styles.voteButton,
+            {
+              backgroundColor: item.has_voted ? c.primarySoft : c.bgTertiary,
+              opacity: pressed ? 0.8 : 1,
+            },
+          ]}
+          onPress={() => onVote(item)}
+          disabled={!canVote}
+        >
+          <Text style={styles.voteIcon}>{item.has_voted ? "❤️" : "🤍"}</Text>
+          <Text style={[styles.voteCount, { color: item.has_voted ? c.primary : c.textSecondary }]}>
+            {item.vote_count}
+          </Text>
+        </Pressable>
+
+        {!item.is_shielded && item.owner_id !== userId && (
+          <PressableScale
+            style={[styles.takeButton, { backgroundColor: c.primary }, shadows.sm]}
+            onPress={() => onOpen(item.square_id)}
+          >
+            <Text style={[styles.takeText, { color: c.primaryText }]}>
+              Prendre — {item.min_price} ⬡
+            </Text>
+          </PressableScale>
+        )}
+      </View>
+    </View>
+  );
+});
+
 export default function DiscoverScreen() {
   const c = useThemeColors();
+  const { session } = useAuth();
+  const userId = session?.user.id ?? null;
   const [tab, setTab] = useState<"feed" | "leaderboard" | "team">("feed");
-  const [userId, setUserId] = useState<string | null>(null);
 
-  // Feed
-  const [feed, setFeed] = useState<FeedItem[]>([]);
-  const [feedLoading, setFeedLoading] = useState(true);
+  // ─── Feed (SWR page 1 + pages suivantes locales) ────────
+  const feedKey = userId ? `feed:${userId}` : null;
+  const {
+    data: feedPage1,
+    loading: feedLoading,
+    refresh: refreshFeed,
+  } = useSWR<FeedItem[]>(feedKey, () => getFeed(userId!), 30000);
+  const [extraPages, setExtraPages] = useState<FeedItem[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [endReached, setEndReached] = useState(false);
 
-  // Quêtes
-  const [quests, setQuests] = useState<DailyQuest[]>([]);
+  const feed = useMemo(() => {
+    const p1 = feedPage1 ?? [];
+    const seen = new Set(p1.map((i) => i.publication_id));
+    return [...p1, ...extraPages.filter((i) => !seen.has(i.publication_id))];
+  }, [feedPage1, extraPages]);
+
+  useEffect(() => {
+    if (feedPage1 && extraPages.length === 0) setEndReached(feedPage1.length < 20);
+  }, [feedPage1, extraPages.length]);
+
+  // Préchauffe les dernières images arrivées (cache disque expo-image)
+  useEffect(() => {
+    if (feed.length === 0) return;
+    const urls = feed.slice(-8).map((f) => f.image_url).filter(Boolean);
+    try {
+      Image.prefetch(urls);
+    } catch {
+      // silencieux
+    }
+  }, [feed]);
+
+  // ─── Quêtes ─────────────────────────────────────────────
+  const questsKey = userId ? `quests:${userId}` : null;
+  const { data: quests = [], refresh: refreshQuests } = useSWR<DailyQuest[]>(
+    questsKey,
+    () => getDailyQuests(userId!),
+    60000,
+  );
   const [claiming, setClaiming] = useState<string | null>(null);
 
-  // Classement
+  // ─── Classement ─────────────────────────────────────────
   const [lbKind, setLbKind] = useState<LeaderboardKind>("tiles");
-  const [lbRows, setLbRows] = useState<LeaderboardRow[]>([]);
-  const [lbLoading, setLbLoading] = useState(false);
+  const lbKey = tab === "leaderboard" ? `leaderboard:${lbKind}` : null;
+  const { data: lbRows = [], loading: lbLoading } = useSWR<LeaderboardRow[]>(
+    lbKey,
+    () => getLeaderboard(lbKind),
+    60000,
+  );
 
-  // Team
-  const [challenge, setChallenge] = useState<TeamChallenge | null>(null);
-  const [teams, setTeams] = useState<TeamRow[]>([]);
-  const [teamLoading, setTeamLoading] = useState(false);
+  // ─── Team ───────────────────────────────────────────────
+  const teamKey = tab === "team" && userId ? `team:${userId}` : null;
+  const {
+    data: teamData,
+    loading: teamLoading,
+    refresh: refreshTeam,
+  } = useSWR<TeamData>(
+    teamKey,
+    async () => {
+      const challenge = await getTeamChallenge(userId!);
+      const teams = challenge.my_team ? [] : await listTeams();
+      return { challenge, teams };
+    },
+    60000,
+  );
+  const challenge = teamData?.challenge ?? null;
+  const teams = teamData?.teams ?? [];
   const [teamBusy, setTeamBusy] = useState(false);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [teamName, setTeamName] = useState("");
@@ -99,86 +253,72 @@ export default function DiscoverScreen() {
 
   useEffect(() => {
     track("feed_open");
-    (async () => {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) return;
-      setUserId(user.id);
-      await Promise.all([loadFeed(user.id), loadQuests(user.id)]);
-    })();
   }, []);
 
-  const loadFeed = async (uid: string) => {
-    setFeedLoading(true);
-    try {
-      const items = await getFeed(uid);
-      setFeed(items);
-      setEndReached(items.length < 20);
-    } catch {
-      // silencieux
-    } finally {
-      setFeedLoading(false);
-    }
-  };
+  useEffect(() => {
+    if (tab === "team") track("team_challenge_view");
+  }, [tab]);
 
-  const loadQuests = async (uid: string) => {
-    try {
-      setQuests(await getDailyQuests(uid));
-    } catch {
-      // silencieux
-    }
-  };
+  // Retour d'onglet : cache affiché instantanément, refetch silencieux derrière
+  useFocusEffect(
+    useCallback(() => {
+      refreshFeed();
+      refreshQuests();
+    }, [refreshFeed, refreshQuests]),
+  );
 
   const onRefresh = useCallback(async () => {
-    if (!userId) return;
     setRefreshing(true);
-    await Promise.all([loadFeed(userId), loadQuests(userId)]);
+    setExtraPages([]);
+    await Promise.all([refreshFeed(), refreshQuests()]);
     setRefreshing(false);
-  }, [userId]);
+  }, [refreshFeed, refreshQuests]);
 
-  const loadMore = async () => {
+  const loadMore = useCallback(async () => {
     if (!userId || loadingMore || endReached || feed.length === 0) return;
     setLoadingMore(true);
     try {
       const last = feed[feed.length - 1];
       const more = await getFeed(userId, last.created_at);
-      setFeed((prev) => [...prev, ...more]);
+      setExtraPages((prev) => [...prev, ...more]);
       if (more.length < 20) setEndReached(true);
     } catch {
       // silencieux
     } finally {
       setLoadingMore(false);
     }
-  };
+  }, [userId, loadingMore, endReached, feed]);
 
-  const handleVote = async (item: FeedItem) => {
-    if (!userId || item.has_voted || item.owner_id === userId) return;
-    hapticLight();
-    // Optimiste
-    setFeed((prev) =>
-      prev.map((f) =>
-        f.publication_id === item.publication_id
-          ? { ...f, has_voted: true, vote_count: f.vote_count + 1 }
-          : f,
-      ),
-    );
-    track("vote", { publication_id: item.publication_id });
-    const { error } = await supabase.rpc("vote_publication", {
-      p_user_id: userId,
-      p_publication_id: item.publication_id,
-    });
-    if (error) {
-      // rollback
-      setFeed((prev) =>
-        prev.map((f) =>
-          f.publication_id === item.publication_id
-            ? { ...f, has_voted: false, vote_count: f.vote_count - 1 }
-            : f,
-        ),
-      );
-    }
-  };
+  /** Patch un item du feed (cache SWR + pages locales). */
+  const patchFeed = useCallback(
+    (pubId: string, patch: (f: FeedItem) => FeedItem) => {
+      if (feedKey) {
+        const cur = getCached<FeedItem[]>(feedKey);
+        if (cur) mutate(feedKey, cur.map((f) => (f.publication_id === pubId ? patch(f) : f)));
+      }
+      setExtraPages((prev) => prev.map((f) => (f.publication_id === pubId ? patch(f) : f)));
+    },
+    [feedKey],
+  );
+
+  const handleVote = useCallback(
+    async (item: FeedItem) => {
+      if (!userId || item.has_voted || item.owner_id === userId) return;
+      hapticLight();
+      // Optimiste
+      patchFeed(item.publication_id, (f) => ({ ...f, has_voted: true, vote_count: f.vote_count + 1 }));
+      track("vote", { publication_id: item.publication_id });
+      const { error } = await supabase.rpc("vote_publication", {
+        p_user_id: userId,
+        p_publication_id: item.publication_id,
+      });
+      if (error) {
+        // rollback
+        patchFeed(item.publication_id, (f) => ({ ...f, has_voted: false, vote_count: f.vote_count - 1 }));
+      }
+    },
+    [userId, patchFeed],
+  );
 
   const handleClaim = async (quest: DailyQuest) => {
     if (!userId || claiming) return;
@@ -186,7 +326,9 @@ export default function DiscoverScreen() {
     try {
       await claimQuest(userId, quest.key);
       hapticSuccess();
-      await loadQuests(userId);
+      invalidate(`stats:${userId}`);
+      invalidate(`balance:${userId}`);
+      await refreshQuests();
     } catch {
       // silencieux
     } finally {
@@ -194,40 +336,16 @@ export default function DiscoverScreen() {
     }
   };
 
-  const loadLeaderboard = useCallback(async (kind: LeaderboardKind) => {
-    setLbLoading(true);
-    try {
-      setLbRows(await getLeaderboard(kind));
-    } catch {
-      setLbRows([]);
-    } finally {
-      setLbLoading(false);
-    }
+  const openSquare = useCallback((squareId: string) => {
+    router.push(`/square/${squareId}`);
   }, []);
 
-  useEffect(() => {
-    if (tab === "leaderboard") loadLeaderboard(lbKind);
-  }, [tab, lbKind, loadLeaderboard]);
-
-  // ─── Team ───────────────────────────────────────────────
-
-  const loadTeam = useCallback(async (uid: string) => {
-    setTeamLoading(true);
-    try {
-      const ch = await getTeamChallenge(uid);
-      setChallenge(ch);
-      if (!ch.my_team) setTeams(await listTeams());
-      track("team_challenge_view");
-    } catch {
-      // silencieux
-    } finally {
-      setTeamLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (tab === "team" && userId) loadTeam(userId);
-  }, [tab, userId, loadTeam]);
+  const renderCard = useCallback(
+    ({ item }: { item: FeedItem }) => (
+      <FeedCard item={item} userId={userId} c={c} onVote={handleVote} onOpen={openSquare} />
+    ),
+    [userId, c, handleVote, openSquare],
+  );
 
   const handleCreateTeam = async () => {
     const name = teamName.trim();
@@ -239,7 +357,7 @@ export default function DiscoverScreen() {
       track("team_create", { name, emoji: teamEmoji });
       setShowCreateForm(false);
       setTeamName("");
-      await loadTeam(userId);
+      await refreshTeam();
     } catch (e) {
       Alert.alert("Erreur", e instanceof Error ? e.message : "Impossible de créer la team");
     } finally {
@@ -254,7 +372,7 @@ export default function DiscoverScreen() {
       await joinTeam(userId, team.id);
       hapticSuccess();
       track("team_join", { team_id: team.id });
-      await loadTeam(userId);
+      await refreshTeam();
     } catch (e) {
       const msg = e instanceof Error ? e.message : "";
       Alert.alert(
@@ -276,85 +394,13 @@ export default function DiscoverScreen() {
         onPress: async () => {
           try {
             await leaveTeam(userId);
-            await loadTeam(userId);
+            await refreshTeam();
           } catch {
             // silencieux
           }
         },
       },
     ]);
-  };
-
-  const renderCard = ({ item }: { item: FeedItem }) => {
-    const canVote = !item.has_voted && item.owner_id !== userId;
-    return (
-      <View style={[styles.card, { backgroundColor: c.bgSecondary }]}>
-        {/* Header */}
-        <View style={styles.cardHeader}>
-          {item.avatar_url ? (
-            <Image source={{ uri: item.avatar_url }} style={styles.cardAvatar} />
-          ) : (
-            <View style={[styles.cardAvatar, styles.avatarFallback, { backgroundColor: c.primary }]}>
-              <Text style={styles.avatarInitial}>
-                {item.username?.charAt(0).toUpperCase() ?? "?"}
-              </Text>
-            </View>
-          )}
-          <View style={styles.cardHeaderText}>
-            <Text style={[styles.cardUsername, { color: c.text }]} numberOfLines={1}>
-              {item.username}
-            </Text>
-            <Text style={[styles.cardTime, { color: c.textTertiary }]}>
-              {relativeTime(item.created_at)}
-            </Text>
-          </View>
-          {item.is_shielded && (
-            <View style={[styles.shieldBadge, { backgroundColor: `${palette.warning}20` }]}>
-              <Text style={[styles.shieldBadgeText, { color: palette.warning }]}>🛡️ Protégée</Text>
-            </View>
-          )}
-        </View>
-
-        {/* Image */}
-        <Pressable onPress={() => router.push(`/square/${item.square_id}`)}>
-          <Image source={{ uri: item.image_url }} style={styles.cardImage} />
-        </Pressable>
-
-        {/* Footer */}
-        <View style={styles.cardFooter}>
-          <Pressable
-            style={({ pressed }) => [
-              styles.voteButton,
-              {
-                backgroundColor: item.has_voted ? c.primarySoft : c.bgTertiary,
-                opacity: pressed ? 0.8 : 1,
-              },
-            ]}
-            onPress={() => handleVote(item)}
-            disabled={!canVote}
-          >
-            <Text style={styles.voteIcon}>{item.has_voted ? "❤️" : "🤍"}</Text>
-            <Text style={[styles.voteCount, { color: item.has_voted ? c.primary : c.textSecondary }]}>
-              {item.vote_count}
-            </Text>
-          </Pressable>
-
-          {!item.is_shielded && item.owner_id !== userId && (
-            <Pressable
-              style={({ pressed }) => [
-                styles.takeButton,
-                { backgroundColor: c.primary, opacity: pressed ? 0.85 : 1 },
-              ]}
-              onPress={() => router.push(`/square/${item.square_id}`)}
-            >
-              <Text style={[styles.takeText, { color: c.primaryText }]}>
-                Prendre — {item.min_price} ⬡
-              </Text>
-            </Pressable>
-          )}
-        </View>
-      </View>
-    );
   };
 
   const questsBanner =
@@ -382,10 +428,10 @@ export default function DiscoverScreen() {
                 </View>
               </View>
               {done && !q.claimed ? (
-                <Pressable
-                  style={({ pressed }) => [
+                <PressableScale
+                  style={[
                     styles.claimButton,
-                    { backgroundColor: c.primary, opacity: pressed || claiming === q.key ? 0.8 : 1 },
+                    { backgroundColor: c.primary, opacity: claiming === q.key ? 0.8 : 1 },
                   ]}
                   onPress={() => handleClaim(q)}
                   disabled={!!claiming}
@@ -393,7 +439,7 @@ export default function DiscoverScreen() {
                   <Text style={[styles.claimText, { color: c.primaryText }]}>
                     Réclamer +{q.reward} ⬡
                   </Text>
-                </Pressable>
+                </PressableScale>
               ) : (
                 <Text style={[styles.questProgress, { color: q.claimed ? c.success : c.textTertiary }]}>
                   {q.claimed ? "✓" : `${q.progress}/${q.target}`}
@@ -436,14 +482,19 @@ export default function DiscoverScreen() {
 
       {tab === "feed" ? (
         feedLoading && feed.length === 0 ? (
-          <View style={styles.loading}>
-            <ActivityIndicator size="large" color={c.primary} />
-          </View>
+          <ScrollView>
+            <RushBanner style={{ marginHorizontal: spacing.base, marginBottom: spacing.md }} />
+            <FeedSkeleton />
+          </ScrollView>
         ) : (
           <FlatList
             data={feed}
             keyExtractor={(item) => item.publication_id}
             renderItem={renderCard}
+            windowSize={7}
+            maxToRenderPerBatch={6}
+            initialNumToRender={4}
+            removeClippedSubviews
             ListHeaderComponent={
               <View>
                 <RushBanner style={{ marginHorizontal: spacing.base, marginBottom: spacing.md }} />
@@ -494,9 +545,7 @@ export default function DiscoverScreen() {
           </View>
 
           {lbLoading ? (
-            <View style={styles.loading}>
-              <ActivityIndicator size="large" color={c.primary} />
-            </View>
+            <ListSkeleton rows={6} />
           ) : (
             <FlatList
               data={lbRows}
@@ -504,6 +553,10 @@ export default function DiscoverScreen() {
               renderItem={({ item: row }) => (
                 <LeaderboardLine row={row} isMe={row.user_id === userId} colors={c} />
               )}
+              windowSize={7}
+              maxToRenderPerBatch={6}
+              initialNumToRender={10}
+              removeClippedSubviews
               ListEmptyComponent={
                 <Text style={[styles.emptyText, { color: c.textTertiary }]}>
                   Pas encore de classement.
@@ -514,9 +567,7 @@ export default function DiscoverScreen() {
           )}
         </View>
       ) : teamLoading && !challenge ? (
-        <View style={styles.loading}>
-          <ActivityIndicator size="large" color={c.primary} />
-        </View>
+        <ListSkeleton rows={6} />
       ) : challenge?.my_team ? (
         // ─── Avec team ───
         <ScrollView contentContainerStyle={styles.teamContent}>
@@ -638,32 +689,32 @@ export default function DiscoverScreen() {
                 >
                   <Text style={{ color: c.textSecondary, fontWeight: fonts.weights.medium }}>Annuler</Text>
                 </Pressable>
-                <Pressable
-                  style={({ pressed }) => [
+                <PressableScale
+                  style={[
                     styles.createConfirm,
                     {
                       backgroundColor: c.primary,
-                      opacity: pressed || teamBusy || !teamName.trim() ? 0.6 : 1,
+                      opacity: teamBusy || !teamName.trim() ? 0.6 : 1,
                     },
                   ]}
                   onPress={handleCreateTeam}
                   disabled={teamBusy || !teamName.trim()}
                 >
                   <Text style={{ color: c.primaryText, fontWeight: fonts.weights.bold }}>Créer</Text>
-                </Pressable>
+                </PressableScale>
               </View>
             </View>
           ) : (
-            <Pressable
-              style={({ pressed }) => [
+            <PressableScale
+              style={[
                 styles.createTeamButton,
-                { backgroundColor: c.primary, opacity: pressed ? 0.85 : 1 },
+                { backgroundColor: c.primary },
                 shadows.md,
               ]}
               onPress={() => setShowCreateForm(true)}
             >
               <Text style={[styles.createTeamText, { color: c.primaryText }]}>Créer une team</Text>
-            </Pressable>
+            </PressableScale>
           )}
 
           {teams.length > 0 && (
@@ -676,16 +727,16 @@ export default function DiscoverScreen() {
                 {t.name}
               </Text>
               <Text style={[styles.teamRowMembers, { color: c.textTertiary }]}>{t.member_count} 👤</Text>
-              <Pressable
-                style={({ pressed }) => [
+              <PressableScale
+                style={[
                   styles.joinButton,
-                  { backgroundColor: c.primary, opacity: pressed || teamBusy ? 0.7 : 1 },
+                  { backgroundColor: c.primary, opacity: teamBusy ? 0.7 : 1 },
                 ]}
                 onPress={() => handleJoinTeam(t)}
                 disabled={teamBusy}
               >
                 <Text style={[styles.joinText, { color: c.primaryText }]}>Rejoindre</Text>
-              </Pressable>
+              </PressableScale>
             </View>
           ))}
         </ScrollView>
@@ -694,7 +745,7 @@ export default function DiscoverScreen() {
   );
 }
 
-function LeaderboardLine({
+const LeaderboardLine = memo(function LeaderboardLine({
   row,
   isMe,
   colors: c,
@@ -715,7 +766,14 @@ function LeaderboardLine({
         {row.rank}
       </Text>
       {row.avatar_url ? (
-        <Image source={{ uri: row.avatar_url }} style={styles.lbAvatar} />
+        <Image
+          source={{ uri: row.avatar_url }}
+          style={styles.lbAvatar}
+          contentFit="cover"
+          transition={150}
+          cachePolicy="memory-disk"
+          recyclingKey={row.user_id}
+        />
       ) : (
         <View style={[styles.lbAvatar, styles.avatarFallback, { backgroundColor: c.primary }]}>
           <Text style={styles.lbAvatarInitial}>
@@ -733,11 +791,10 @@ function LeaderboardLine({
       <Text style={[styles.lbValue, { color: c.primary }]}>{row.value}</Text>
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   container: { flex: 1, paddingTop: 60 },
-  loading: { flex: 1, justifyContent: "center", alignItems: "center" },
   emptyText: {
     textAlign: "center",
     marginTop: spacing.xxl,
@@ -877,7 +934,7 @@ const styles = StyleSheet.create({
     lineHeight: fonts.sizes.sm * fonts.lineHeights.relaxed,
   },
   createTeamButton: {
-    borderRadius: radii.md, padding: spacing.base, alignItems: "center",
+    borderRadius: radii.full, padding: spacing.base, alignItems: "center",
     marginBottom: spacing.lg,
   },
   createTeamText: { fontSize: fonts.sizes.base, fontWeight: fonts.weights.semibold },

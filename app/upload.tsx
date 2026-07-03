@@ -2,7 +2,6 @@ import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
-  Image,
   Pressable,
   StyleSheet,
   Text,
@@ -10,18 +9,21 @@ import {
   View,
 } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
+import { Image } from "expo-image";
 import * as ImagePicker from "expo-image-picker";
 import * as ImageManipulator from "expo-image-manipulator";
 import * as Location from "expo-location";
-import { supabase } from "../src/lib/supabase";
+import { supabase, getCachedUser } from "../src/lib/supabase";
 import { cellFromId } from "../src/lib/kmGrid";
 import { emitOptimisticUpload } from "../src/lib/tileEvents";
-import { getGameState, takeSquare, InsufficientTesselsError } from "../src/lib/economy";
+import { getGameState, GameState, takeSquare, InsufficientTesselsError } from "../src/lib/economy";
+import { useSWR, invalidate } from "../src/lib/swr";
 import { rushPrice, tesselsToEur } from "../src/constants/iap";
 import { track } from "../src/lib/track";
 import { hapticHeavy, hapticSuccess } from "../src/lib/haptics";
 import { sectorLabel } from "../src/lib/sector";
 import ConquestOverlay from "../src/components/ConquestOverlay";
+import PressableScale from "../src/components/PressableScale";
 import { useThemeColors, fonts, spacing, radii, shadows } from "../src/theme";
 
 export default function UploadScreen() {
@@ -39,6 +41,8 @@ export default function UploadScreen() {
   const isTake = replace === "true";
   const baseMinPrice = Number(minPriceParam ?? 0);
   const [rushActive, setRushActive] = useState(false);
+  // Game state depuis le cache partagé (instantané si déjà chaud)
+  const { data: gameState } = useSWR<GameState>(isTake ? "gameState" : null, getGameState, 30000);
   // Prix effectif — remisé pendant le Rush Hour (le serveur valide de toute façon)
   const minPrice = rushActive ? rushPrice(baseMinPrice) : baseMinPrice;
   const [priceInput, setPriceInput] = useState(String(baseMinPrice));
@@ -74,16 +78,10 @@ export default function UploadScreen() {
   }, [isTake, requestLocation]);
 
   useEffect(() => {
-    if (!isTake) return;
-    getGameState()
-      .then((gs) => {
-        if (gs.rush_active) {
-          setRushActive(true);
-          setPriceInput(String(rushPrice(baseMinPrice)));
-        }
-      })
-      .catch(() => {});
-  }, [isTake, baseMinPrice]);
+    if (!isTake || !gameState?.rush_active || rushActive) return;
+    setRushActive(true);
+    setPriceInput(String(rushPrice(baseMinPrice)));
+  }, [isTake, gameState?.rush_active, rushActive, baseMinPrice]);
 
   const pickImage = async (useCamera: boolean) => {
     try {
@@ -196,7 +194,7 @@ export default function UploadScreen() {
     try {
       const {
         data: { user },
-      } = await supabase.auth.getUser();
+      } = await getCachedUser();
       if (!user) throw new Error("Connectez-vous pour publier");
 
       const response = await fetch(imageUri);
@@ -270,6 +268,13 @@ export default function UploadScreen() {
         }
       }
 
+      // Rafraîchit les caches concernés (feed, solde, stats) en arrière-plan
+      invalidate(`feed:${user.id}`);
+      invalidate(`stats:${user.id}`);
+      invalidate(`balance:${user.id}`);
+      invalidate(`history:${user.id}:all`);
+      invalidate(`history:${user.id}:active`);
+
       if (isTake) {
         hapticHeavy();
         setTimeout(hapticSuccess, 150);
@@ -335,7 +340,13 @@ export default function UploadScreen() {
         </View>
       ) : imageUri ? (
         <View style={styles.previewContainer}>
-          <Image source={{ uri: imageUri }} style={styles.preview} />
+          <Image
+            source={{ uri: imageUri }}
+            style={styles.preview}
+            contentFit="cover"
+            transition={150}
+            cachePolicy="memory-disk"
+          />
 
           {isTake && (
             <View style={styles.priceSection}>
@@ -375,10 +386,11 @@ export default function UploadScreen() {
             >
               <Text style={[styles.secondaryText, { color: c.text }]}>Changer</Text>
             </Pressable>
-            <Pressable
-              style={({ pressed }) => [
+            <PressableScale
+              style={[
                 styles.primaryButton,
-                { backgroundColor: c.primary, opacity: pressed || uploading ? 0.85 : 1 },
+                { backgroundColor: c.primary, opacity: uploading ? 0.85 : 1 },
+                shadows.md,
               ]}
               onPress={handleUpload}
               disabled={uploading}
@@ -390,7 +402,7 @@ export default function UploadScreen() {
                   {isTake ? `Prendre — ${priceInput} ⬡` : "Publier"}
                 </Text>
               )}
-            </Pressable>
+            </PressableScale>
           </View>
         </View>
       ) : (
@@ -404,27 +416,27 @@ export default function UploadScreen() {
             </Text>
           ) : null}
 
-          <Pressable
-            style={({ pressed }) => [
+          <PressableScale
+            style={[
               styles.choiceButton,
-              { backgroundColor: c.primary, opacity: pressed ? 0.85 : 1 },
+              { backgroundColor: c.primary },
               shadows.md,
             ]}
             onPress={() => pickImage(true)}
           >
             <Text style={[styles.choiceText, { color: c.primaryText }]}>Prendre une photo</Text>
-          </Pressable>
+          </PressableScale>
 
-          <Pressable
-            style={({ pressed }) => [
+          <PressableScale
+            style={[
               styles.choiceButton,
-              { backgroundColor: c.card, borderWidth: 1, borderColor: c.border, opacity: pressed ? 0.85 : 1 },
+              { backgroundColor: c.card, borderWidth: 1, borderColor: c.border },
               shadows.sm,
             ]}
             onPress={() => pickImage(false)}
           >
             <Text style={[styles.choiceText, { color: c.text }]}>Choisir dans la galerie</Text>
-          </Pressable>
+          </PressableScale>
         </View>
       )}
 
@@ -460,7 +472,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
   },
   choiceButton: {
-    borderRadius: radii.md,
+    borderRadius: radii.full,
     padding: spacing.base + 2,
     alignItems: "center",
   },
@@ -482,7 +494,7 @@ const styles = StyleSheet.create({
   },
   secondaryText: { fontSize: fonts.sizes.base, fontWeight: fonts.weights.medium },
   primaryButton: {
-    borderRadius: radii.md,
+    borderRadius: radii.full,
     padding: spacing.base,
     paddingHorizontal: spacing.xl,
     flexShrink: 1,

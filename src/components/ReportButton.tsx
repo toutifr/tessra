@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
-import { supabase } from "../lib/supabase";
+import { supabase, getCachedUser } from "../lib/supabase";
 import { useThemeColors, fonts, spacing, radii } from "../theme";
 
 const REASONS = [
@@ -25,7 +25,7 @@ export default function ReportButton({ publicationId }: Props) {
     try {
       const {
         data: { user },
-      } = await supabase.auth.getUser();
+      } = await getCachedUser();
       if (!user) throw new Error("Not authenticated");
 
       const { error } = await supabase.from("moderation_flags").insert({

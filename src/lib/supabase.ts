@@ -35,3 +35,14 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
     detectSessionInUrl: false,
   },
 });
+
+/**
+ * Utilisateur depuis la session locale (aucun round-trip réseau),
+ * même forme de retour que supabase.auth.getUser().
+ */
+export async function getCachedUser(): Promise<{ data: { user: import("@supabase/supabase-js").User | null } }> {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  return { data: { user: session?.user ?? null } };
+}

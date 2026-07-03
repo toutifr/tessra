@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, useMemo } from "react";
-import { ActivityIndicator, StyleSheet, View } from "react-native";
+import { StyleSheet, View } from "react-native";
 import MapboxGL from "@rnmapbox/maps";
 import * as Location from "expo-location";
 import { router } from "expo-router";
@@ -11,7 +11,7 @@ import TileLayer from "../../src/components/TileLayer";
 import RushBanner from "../../src/components/RushBanner";
 import { useSquares, SquareWithImage } from "../../src/hooks/useSquares";
 import { onOptimisticUpload, type OptimisticUpload } from "../../src/lib/tileEvents";
-import { supabase } from "../../src/lib/supabase";
+import { useAuth } from "../../src/providers/AuthProvider";
 import { getPlayfulMapStyle } from "../../src/lib/mapStyle";
 import * as Haptics from "expo-haptics";
 
@@ -50,15 +50,15 @@ function cellsToFeatureCollection(squares: SquareWithImage[]): GeoJSON.FeatureCo
 }
 
 export default function MapScreen() {
+  const { session } = useAuth();
+  const meId = session?.user.id ?? null;
   const [userLocation, setUserLocation] = useState<[number, number] | null>(null);
-  const [locationLoading, setLocationLoading] = useState(true);
   const [currentZoom, setCurrentZoom] = useState(DEFAULT_ZOOM);
   const [viewportBounds, setViewportBounds] = useState<{
     sw: { lat: number; lng: number };
     ne: { lat: number; lng: number };
   } | null>(null);
   const [optimisticUpload, setOptimisticUpload] = useState<OptimisticUpload | null>(null);
-  const [meId, setMeId] = useState<string | null>(null);
   const [styleJSON, setStyleJSON] = useState<string | null>(null);
   const { squares, fetchSquaresInViewport } = useSquares();
   const insets = useSafeAreaInsets();
@@ -68,6 +68,7 @@ export default function MapScreen() {
 
   squaresRef.current = squares;
 
+  // GPS en arrière-plan : la carte s'affiche immédiatement, on recentre après
   useEffect(() => {
     (async () => {
       const { status } = await Location.requestForegroundPermissionsAsync();
@@ -75,18 +76,25 @@ export default function MapScreen() {
         const location = await Location.getCurrentPositionAsync({});
         setUserLocation([location.coords.longitude, location.coords.latitude]);
       }
-      setLocationLoading(false);
     })();
   }, []);
 
-  // Style "monde ludique" (sans toponymes) + utilisateur courant
+  // Recentre la caméra dès que la position arrive
+  useEffect(() => {
+    if (userLocation) {
+      cameraRef.current?.setCamera({
+        centerCoordinate: userLocation,
+        zoomLevel: DEFAULT_ZOOM,
+        animationDuration: 800,
+      });
+    }
+  }, [userLocation]);
+
+  // Style "monde ludique" (sans toponymes)
   useEffect(() => {
     let mounted = true;
     getPlayfulMapStyle().then((json) => {
       if (mounted && json) setStyleJSON(json);
-    });
-    supabase.auth.getUser().then(({ data }) => {
-      if (mounted) setMeId(data.user?.id ?? null);
     });
     return () => {
       mounted = false;
@@ -179,14 +187,6 @@ export default function MapScreen() {
       ),
     );
   }, [squares, meId]);
-
-  if (locationLoading) {
-    return (
-      <View style={styles.loading}>
-        <ActivityIndicator size="large" />
-      </View>
-    );
-  }
 
   const center = userLocation ?? DEFAULT_CENTER;
 
@@ -292,6 +292,5 @@ export default function MapScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   map: { flex: 1 },
-  loading: { flex: 1, justifyContent: "center", alignItems: "center" },
   rushOverlay: { position: "absolute", left: 12, right: 12 },
 });

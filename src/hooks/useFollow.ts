@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import { supabase } from "../lib/supabase";
+import { supabase, getCachedUser } from "../lib/supabase";
 
 export function useFollow() {
   const [loading, setLoading] = useState(false);
@@ -7,7 +7,7 @@ export function useFollow() {
   const isFollowing = useCallback(async (targetUserId: string): Promise<boolean> => {
     const {
       data: { user },
-    } = await supabase.auth.getUser();
+    } = await getCachedUser();
     if (!user) return false;
 
     const { data } = await supabase
@@ -25,7 +25,7 @@ export function useFollow() {
     try {
       const {
         data: { user },
-      } = await supabase.auth.getUser();
+      } = await getCachedUser();
       if (!user) return false;
 
       const { error } = await supabase.rpc("follow_user", {
@@ -44,7 +44,7 @@ export function useFollow() {
     try {
       const {
         data: { user },
-      } = await supabase.auth.getUser();
+      } = await getCachedUser();
       if (!user) return false;
 
       const { error } = await supabase.rpc("unfollow_user", {

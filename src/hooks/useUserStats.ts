@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
+import { useSWR } from "../lib/swr";
+import { useAuth } from "../providers/AuthProvider";
 import type { UserStats } from "../types/square";
 
 const DEFAULT_STATS: UserStats = {
@@ -16,34 +17,21 @@ const DEFAULT_STATS: UserStats = {
   badges: [],
 };
 
+export async function fetchUserStats(userId: string): Promise<UserStats> {
+  const { data, error } = await supabase.rpc("get_user_stats", {
+    p_user_id: userId,
+  });
+  if (error || !data) throw error ?? new Error("stats indisponibles");
+  return data as UserStats;
+}
+
 export function useUserStats() {
-  const [stats, setStats] = useState<UserStats>(DEFAULT_STATS);
-  const [loading, setLoading] = useState(true);
-
-  const fetchStats = useCallback(async () => {
-    try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) return;
-
-      const { data, error } = await supabase.rpc("get_user_stats", {
-        p_user_id: user.id,
-      });
-
-      if (!error && data) {
-        setStats(data as UserStats);
-      }
-    } catch {
-      // silently fail
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchStats();
-  }, [fetchStats]);
-
-  return { stats, loading, refetch: fetchStats };
+  const { session } = useAuth();
+  const uid = session?.user.id ?? null;
+  const { data, loading, refresh } = useSWR<UserStats>(
+    uid ? `stats:${uid}` : null,
+    () => fetchUserStats(uid!),
+    30000,
+  );
+  return { stats: data ?? DEFAULT_STATS, loading, refetch: refresh };
 }

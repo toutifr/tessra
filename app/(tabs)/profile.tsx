@@ -1,8 +1,6 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
-  ActivityIndicator,
   Alert,
-  Image,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -10,14 +8,18 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { router } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
+import { Image } from "expo-image";
 import * as ImagePicker from "expo-image-picker";
 import { supabase } from "../../src/lib/supabase";
 import { getTeamChallenge } from "../../src/lib/economy";
+import { useSWR, mutate, getCached } from "../../src/lib/swr";
+import { useAuth } from "../../src/providers/AuthProvider";
 import { useUserStats } from "../../src/hooks/useUserStats";
 import AnimatedNumber from "../../src/components/AnimatedNumber";
+import PressableScale from "../../src/components/PressableScale";
+import Skeleton from "../../src/components/Skeleton";
 import { useThemeColors, fonts, spacing, radii, shadows, palette, ThemeColors } from "../../src/theme";
-import type { UserStats } from "../../src/types/square";
 
 interface Profile {
   username: string;
@@ -25,69 +27,83 @@ interface Profile {
   created_at: string;
 }
 
+interface ProfileData {
+  profile: Profile | null;
+  team: { emoji: string; name: string } | null;
+}
+
+async function fetchProfileData(uid: string): Promise<ProfileData> {
+  const { data: profileData } = await supabase
+    .from("profiles")
+    .select("username, avatar_url, created_at")
+    .eq("user_id", uid)
+    .single();
+
+  let team: ProfileData["team"] = null;
+  try {
+    const ch = await getTeamChallenge(uid);
+    if (ch.my_team) team = { emoji: ch.my_team.emoji, name: ch.my_team.name };
+  } catch {
+    // silencieux
+  }
+
+  return { profile: (profileData as Profile) ?? null, team };
+}
+
 export default function ProfileScreen() {
-  const [profile, setProfile] = useState<Profile | null>(null);
-  const [loading, setLoading] = useState(true);
+  const { session } = useAuth();
+  const uid = session?.user.id ?? null;
+  const profileKey = uid ? `profile:${uid}` : null;
+
+  const { data, loading, refresh } = useSWR<ProfileData>(
+    profileKey,
+    () => fetchProfileData(uid!),
+    60000,
+  );
+  const profile = data?.profile ?? null;
+  const team = data?.team ?? null;
+
   const [editing, setEditing] = useState(false);
   const [newUsername, setNewUsername] = useState("");
-  const [team, setTeam] = useState<{ emoji: string; name: string } | null>(null);
-  const { stats, loading: statsLoading, refetch: refetchStats } = useUserStats();
+  const { stats, refetch: refetchStats } = useUserStats();
   const c = useThemeColors();
 
   useEffect(() => {
-    loadProfile();
-  }, []);
+    if (profile) setNewUsername(profile.username);
+  }, [profile]);
 
-  const loadProfile = async () => {
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (!user) return;
+  // Retour d'onglet : cache instantané + refetch silencieux
+  useFocusEffect(
+    useCallback(() => {
+      refresh();
+      refetchStats();
+    }, [refresh, refetchStats]),
+  );
 
-    const { data: profileData } = await supabase
-      .from("profiles")
-      .select("username, avatar_url, created_at")
-      .eq("user_id", user.id)
-      .single();
-
-    if (profileData) {
-      setProfile(profileData as Profile);
-      setNewUsername(profileData.username);
-    }
-
-    setLoading(false);
-
-    // Team (non bloquant)
-    try {
-      const ch = await getTeamChallenge(user.id);
-      if (ch.my_team) setTeam({ emoji: ch.my_team.emoji, name: ch.my_team.name });
-    } catch {
-      // silencieux
-    }
+  const patchProfile = (patch: Partial<Profile>) => {
+    if (!profileKey) return;
+    const cur = getCached<ProfileData>(profileKey);
+    if (cur?.profile) mutate(profileKey, { ...cur, profile: { ...cur.profile, ...patch } });
   };
 
   const handleUpdateUsername = async () => {
-    if (!newUsername.trim()) return;
-
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (!user) return;
+    if (!newUsername.trim() || !uid) return;
 
     const { error } = await supabase
       .from("profiles")
       .update({ username: newUsername.trim(), updated_at: new Date().toISOString() })
-      .eq("user_id", user.id);
+      .eq("user_id", uid);
 
     if (error) {
       Alert.alert("Erreur", error.message);
     } else {
-      setProfile((prev) => (prev ? { ...prev, username: newUsername.trim() } : null));
+      patchProfile({ username: newUsername.trim() });
       setEditing(false);
     }
   };
 
   const handleAvatarUpload = async () => {
+    if (!uid) return;
     const result = await ImagePicker.launchImageLibraryAsync({
       quality: 0.7,
       allowsEditing: false,
@@ -97,15 +113,10 @@ export default function ProfileScreen() {
 
     if (result.canceled || !result.assets[0]) return;
 
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (!user) return;
-
     const response = await fetch(result.assets[0].uri);
     const blob = await response.blob();
     const arrayBuffer = await new Response(blob).arrayBuffer();
-    const fileName = `avatars/${user.id}.jpg`;
+    const fileName = `avatars/${uid}.jpg`;
 
     const { error: uploadError } = await supabase.storage
       .from("publications")
@@ -123,9 +134,9 @@ export default function ProfileScreen() {
     await supabase
       .from("profiles")
       .update({ avatar_url: publicUrl, updated_at: new Date().toISOString() })
-      .eq("user_id", user.id);
+      .eq("user_id", uid);
 
-    setProfile((prev) => (prev ? { ...prev, avatar_url: publicUrl } : null));
+    patchProfile({ avatar_url: publicUrl });
   };
 
   const handleLogout = async () => {
@@ -137,10 +148,23 @@ export default function ProfileScreen() {
     }
   };
 
-  if (loading) {
+  if (loading && !profile) {
+    // Skeleton de forme — plus de spinner plein écran
     return (
-      <View style={[styles.loading, { backgroundColor: c.bg }]}>
-        <ActivityIndicator size="large" color={c.primary} />
+      <View style={[styles.container, { backgroundColor: c.bg }]}>
+        <View style={styles.scrollContent}>
+          <View style={styles.header}>
+            <Skeleton width={88} height={88} borderRadius={44} />
+            <Skeleton width={140} height={20} style={{ marginTop: spacing.md }} />
+            <Skeleton width={110} height={12} style={{ marginTop: spacing.sm }} />
+          </View>
+          <Skeleton width="100%" height={96} borderRadius={radii.lg} style={{ marginBottom: spacing.lg }} />
+          <View style={styles.statsGrid}>
+            {Array.from({ length: 6 }).map((_, i) => (
+              <Skeleton key={i} width="31%" height={72} borderRadius={radii.md} />
+            ))}
+          </View>
+        </View>
       </View>
     );
   }
@@ -158,7 +182,13 @@ export default function ProfileScreen() {
       <View style={styles.header}>
         <Pressable onPress={handleAvatarUpload}>
           {profile?.avatar_url ? (
-            <Image source={{ uri: profile.avatar_url }} style={styles.avatar} />
+            <Image
+              source={{ uri: profile.avatar_url }}
+              style={styles.avatar}
+              contentFit="cover"
+              transition={150}
+              cachePolicy="memory-disk"
+            />
           ) : (
             <View style={[styles.avatarPlaceholder, { backgroundColor: c.primary }]}>
               <Text style={styles.avatarInitial}>
@@ -210,15 +240,12 @@ export default function ProfileScreen() {
           />
           <Text style={[styles.creditsLabel, { color: c.textSecondary }]}>Reis</Text>
         </View>
-        <Pressable
-          style={({ pressed }) => [
-            styles.addButton,
-            { backgroundColor: c.primary, opacity: pressed ? 0.85 : 1 },
-          ]}
+        <PressableScale
+          style={[styles.addButton, { backgroundColor: c.primary }]}
           onPress={() => router.push("/paywall")}
         >
           <Text style={[styles.addButtonText, { color: c.primaryText }]}>+</Text>
-        </Pressable>
+        </PressableScale>
         {stats.streak_days >= 2 && (
           <View style={[styles.streakBadge, { backgroundColor: palette.warning }]}>
             <Text style={styles.streakText}>🔥 {stats.streak_days} j</Text>
@@ -280,7 +307,6 @@ function StatCard({ value, label, colors: c }: { value: number; label: string; c
 const styles = StyleSheet.create({
   container: { flex: 1 },
   scrollContent: { paddingTop: 60, paddingBottom: 40, paddingHorizontal: spacing.base },
-  loading: { flex: 1, justifyContent: "center", alignItems: "center" },
 
   header: { alignItems: "center", marginBottom: spacing.xl },
   avatar: { width: 88, height: 88, borderRadius: 44 },

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { supabase } from "../lib/supabase";
+import { supabase, getCachedUser } from "../lib/supabase";
 import type { Shield } from "../types/square";
 
 export function useShield() {
@@ -13,7 +13,7 @@ export function useShield() {
     try {
       const {
         data: { user },
-      } = await supabase.auth.getUser();
+      } = await getCachedUser();
       if (!user) return null;
 
       const { data, error } = await supabase.rpc("activate_shield", {

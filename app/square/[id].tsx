@@ -1,8 +1,6 @@
 import { useEffect, useState } from "react";
 import {
-  ActivityIndicator,
   Alert,
-  Image,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -10,15 +8,19 @@ import {
   View,
 } from "react-native";
 import { useLocalSearchParams, router } from "expo-router";
-import { supabase } from "../../src/lib/supabase";
+import { Image } from "expo-image";
+import { supabase, getCachedUser } from "../../src/lib/supabase";
 import { Square, SquareStatus, STATUS_COLORS, Shield } from "../../src/types/square";
 import { Publication } from "../../src/types/square";
 import ReportButton from "../../src/components/ReportButton";
+import PressableScale from "../../src/components/PressableScale";
+import { DetailSkeleton } from "../../src/components/Skeleton";
 import { useVote } from "../../src/hooks/useVote";
 import { useShield } from "../../src/hooks/useShield";
 import { useFollow } from "../../src/hooks/useFollow";
 import { minTakePrice, rushPrice, tesselsToEur } from "../../src/constants/iap";
-import { fortifySquare, getGameState, InsufficientTesselsError } from "../../src/lib/economy";
+import { fortifySquare, getGameState, GameState, InsufficientTesselsError } from "../../src/lib/economy";
+import { useSWR } from "../../src/lib/swr";
 import { track } from "../../src/lib/track";
 import { hapticLight, hapticSuccess } from "../../src/lib/haptics";
 import { sectorLabel } from "../../src/lib/sector";
@@ -43,8 +45,11 @@ export default function SquareDetailScreen() {
   const [isFollowingOwner, setIsFollowingOwner] = useState(false);
   const [history, setHistory] = useState<Publication[]>([]);
   const [fortifying, setFortifying] = useState(false);
-  const [rushActive, setRushActive] = useState(false);
   const c = useThemeColors();
+
+  // Game state partagé en cache — pas de round-trip si déjà chaud
+  const { data: gameState } = useSWR<GameState>("gameState", getGameState, 30000);
+  const rushActive = gameState?.rush_active ?? false;
 
   const { vote, voting } = useVote();
   const { activateShield, getActiveShield, activating } = useShield();
@@ -53,13 +58,11 @@ export default function SquareDetailScreen() {
   useEffect(() => {
     loadSquare();
     loadCurrentUser();
-    getGameState()
-      .then((gs) => setRushActive(gs.rush_active))
-      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
   const loadCurrentUser = async () => {
-    const { data: { user } } = await supabase.auth.getUser();
+    const { data: { user } } = await getCachedUser();
     if (user) setCurrentUserId(user.id);
   };
 
@@ -92,7 +95,7 @@ export default function SquareDetailScreen() {
         setPublication(pubData as Publication);
         setVoteCount(pubData.vote_count ?? 0);
 
-        const { data: { user } } = await supabase.auth.getUser();
+        const { data: { user } } = await getCachedUser();
         if (user) {
           const { data: voteData } = await supabase
             .from("votes")
@@ -215,8 +218,8 @@ export default function SquareDetailScreen() {
 
   if (loading) {
     return (
-      <View style={[styles.loading, { backgroundColor: c.bg }]}>
-        <ActivityIndicator size="large" color={c.primary} />
+      <View style={{ flex: 1, backgroundColor: c.bg }}>
+        <DetailSkeleton />
       </View>
     );
   }
@@ -241,7 +244,9 @@ export default function SquareDetailScreen() {
           <Image
             source={{ uri: publication.image_url }}
             style={[styles.image, isReported && styles.blurredImage]}
-            resizeMode="cover"
+            contentFit="cover"
+            transition={150}
+            cachePolicy="memory-disk"
             blurRadius={isReported ? 20 : 0}
           />
           {isReported && (
@@ -359,13 +364,10 @@ export default function SquareDetailScreen() {
 
       {/* Action Button */}
       {actionLabel && (
-        <Pressable
-          style={({ pressed }) => [
+        <PressableScale
+          style={[
             styles.actionButton,
-            {
-              backgroundColor: activeShield ? c.bgTertiary : c.primary,
-              opacity: pressed ? 0.85 : 1,
-            },
+            { backgroundColor: activeShield ? c.bgTertiary : c.primary },
             !activeShield && shadows.md,
           ]}
           onPress={handleAction}
@@ -377,7 +379,7 @@ export default function SquareDetailScreen() {
           ]}>
             {actionLabel}
           </Text>
-        </Pressable>
+        </PressableScale>
       )}
 
       {/* Shield Activation (owner) */}
@@ -456,7 +458,14 @@ export default function SquareDetailScreen() {
               style={[styles.historyItem, { borderBottomColor: c.separator }]}
             >
               {pub.image_url && (
-                <Image source={{ uri: pub.image_url }} style={styles.historyThumb} />
+                <Image
+                  source={{ uri: pub.image_url }}
+                  style={styles.historyThumb}
+                  contentFit="cover"
+                  transition={150}
+                  cachePolicy="memory-disk"
+                  recyclingKey={pub.id}
+                />
               )}
               <View style={styles.historyInfo}>
                 <Text style={[styles.historyStatus, { color: c.text }]}>
@@ -562,7 +571,7 @@ const styles = StyleSheet.create({
   priceDetail: { fontSize: fonts.sizes.xs, marginTop: spacing.xs },
 
   actionButton: {
-    marginHorizontal: spacing.base, borderRadius: radii.md,
+    marginHorizontal: spacing.base, borderRadius: radii.full,
     padding: spacing.base, alignItems: "center",
     marginBottom: spacing.lg,
   },

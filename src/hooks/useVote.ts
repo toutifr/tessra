@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { supabase } from "../lib/supabase";
+import { supabase, getCachedUser } from "../lib/supabase";
 
 export function useVote() {
   const [voting, setVoting] = useState(false);
@@ -9,7 +9,7 @@ export function useVote() {
     try {
       const {
         data: { user },
-      } = await supabase.auth.getUser();
+      } = await getCachedUser();
       if (!user) return false;
 
       const { error } = await supabase.rpc("vote_publication", {
