@@ -50,7 +50,7 @@ export default function RushBanner({ style }: { style?: ViewStyle }) {
     return (
       <View style={[styles.banner, styles.active, shadows.md, style]}>
         <Text style={styles.activeText} numberOfLines={1}>
-          🔥 Rush Hour — −50 % sur toutes les prises · se termine dans {pad(mm)}:{pad(ss)}
+          🔥 Rush Hour — −50% on every takeover · ends in {pad(mm)}:{pad(ss)}
         </Text>
       </View>
     );
@@ -70,7 +70,7 @@ export default function RushBanner({ style }: { style?: ViewStyle }) {
         ]}
       >
         <Text style={[styles.soonText, { color: c.textSecondary }]} numberOfLines={1}>
-          🔥 Rush Hour dans {pad(hh)}:{pad(mm)}
+          🔥 Rush Hour in {pad(hh)}:{pad(mm)}
         </Text>
       </View>
     );

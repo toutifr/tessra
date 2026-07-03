@@ -21,20 +21,20 @@ export default function SignUpScreen() {
 
   const handleSignUp = async () => {
     if (!email || !password) {
-      Alert.alert("Erreur", "Veuillez remplir tous les champs.");
+      Alert.alert("Error", "Please fill in all fields.");
       return;
     }
     if (password.length < 8) {
-      Alert.alert("Erreur", "Le mot de passe doit contenir au moins 8 caractères.");
+      Alert.alert("Error", "Password must be at least 8 characters.");
       return;
     }
     setLoading(true);
     const { error } = await supabase.auth.signUp({ email, password });
     setLoading(false);
     if (error) {
-      Alert.alert("Erreur", error.message);
+      Alert.alert("Error", error.message);
     } else {
-      Alert.alert("Succès", "Vérifiez votre email pour confirmer votre inscription.", [
+      Alert.alert("Success", "Check your email to confirm your account.", [
         { text: "OK", onPress: () => router.replace("/(auth)/sign-in") },
       ]);
     }
@@ -47,7 +47,7 @@ export default function SignUpScreen() {
     >
       <View style={styles.inner}>
         <Text style={[styles.brand, { color: c.primary }]}>tessra</Text>
-        <Text style={[styles.subtitle, { color: c.textSecondary }]}>Créez votre compte</Text>
+        <Text style={[styles.subtitle, { color: c.textSecondary }]}>Create your account</Text>
 
         <TextInput
           style={[styles.input, { backgroundColor: c.inputBg, borderColor: c.inputBorder, color: c.text }]}
@@ -61,7 +61,7 @@ export default function SignUpScreen() {
         />
         <TextInput
           style={[styles.input, { backgroundColor: c.inputBg, borderColor: c.inputBorder, color: c.text }]}
-          placeholder="Mot de passe (8 caractères minimum)"
+          placeholder="Password (min. 8 characters)"
           placeholderTextColor={c.textTertiary}
           value={password}
           onChangeText={setPassword}
@@ -78,14 +78,14 @@ export default function SignUpScreen() {
           disabled={loading}
         >
           <Text style={[styles.buttonText, { color: c.primaryText }]}>
-            {loading ? "Inscription..." : "S'inscrire"}
+            {loading ? "Signing up..." : "Sign up"}
           </Text>
         </Pressable>
 
         <Link href="/(auth)/sign-in" asChild>
           <Pressable style={styles.link}>
             <Text style={[styles.linkText, { color: c.primary }]}>
-              Déjà un compte ? <Text style={styles.linkBold}>Connectez-vous</Text>
+              Already have an account? <Text style={styles.linkBold}>Sign in</Text>
             </Text>
           </Pressable>
         </Link>

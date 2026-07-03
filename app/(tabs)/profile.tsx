@@ -95,7 +95,7 @@ export default function ProfileScreen() {
       .eq("user_id", uid);
 
     if (error) {
-      Alert.alert("Erreur", error.message);
+      Alert.alert("Error", error.message);
     } else {
       patchProfile({ username: newUsername.trim() });
       setEditing(false);
@@ -123,7 +123,7 @@ export default function ProfileScreen() {
       .upload(fileName, arrayBuffer, { contentType: "image/jpeg", upsert: true });
 
     if (uploadError) {
-      Alert.alert("Erreur", uploadError.message);
+      Alert.alert("Error", uploadError.message);
       return;
     }
 
@@ -142,7 +142,7 @@ export default function ProfileScreen() {
   const handleLogout = async () => {
     const { error } = await supabase.auth.signOut();
     if (error) {
-      Alert.alert("Erreur", error.message);
+      Alert.alert("Error", error.message);
     } else {
       router.replace("/(auth)/sign-in");
     }
@@ -170,7 +170,7 @@ export default function ProfileScreen() {
   }
 
   const joinDate = profile
-    ? new Date(profile.created_at).toLocaleDateString("fr-FR", {
+    ? new Date(profile.created_at).toLocaleDateString("en-US", {
         month: "long",
         year: "numeric",
       })
@@ -227,7 +227,7 @@ export default function ProfileScreen() {
           </View>
         )}
 
-        <Text style={[styles.joinDate, { color: c.textTertiary }]}>Membre depuis {joinDate}</Text>
+        <Text style={[styles.joinDate, { color: c.textTertiary }]}>Member since {joinDate}</Text>
       </View>
 
       {/* Solde Reis */}
@@ -248,17 +248,17 @@ export default function ProfileScreen() {
         </PressableScale>
         {stats.streak_days >= 2 && (
           <View style={[styles.streakBadge, { backgroundColor: palette.warning }]}>
-            <Text style={styles.streakText}>🔥 {stats.streak_days} j</Text>
+            <Text style={styles.streakText}>🔥 {stats.streak_days}d</Text>
           </View>
         )}
       </View>
 
       {/* Stats Grid */}
       <View style={styles.statsGrid}>
-        <StatCard value={stats.active_squares} label="Actives" colors={c} />
+        <StatCard value={stats.active_squares} label="Active" colors={c} />
         <StatCard value={stats.total_publications} label="Publications" colors={c} />
-        <StatCard value={stats.total_replacements} label="Conquêtes" colors={c} />
-        <StatCard value={stats.cells_explored} label="Explorées" colors={c} />
+        <StatCard value={stats.total_replacements} label="Conquests" colors={c} />
+        <StatCard value={stats.cells_explored} label="Explored" colors={c} />
         <StatCard value={stats.total_votes_received} label="Votes" colors={c} />
         <StatCard value={stats.follower_count} label="Followers" colors={c} />
       </View>
@@ -289,7 +289,7 @@ export default function ProfileScreen() {
         ]}
         onPress={handleLogout}
       >
-        <Text style={[styles.logoutText, { color: c.error }]}>Se déconnecter</Text>
+        <Text style={[styles.logoutText, { color: c.error }]}>Sign out</Text>
       </Pressable>
     </ScrollView>
   );

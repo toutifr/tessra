@@ -67,7 +67,7 @@ function RootLayoutInner() {
         options={{
           presentation: "modal",
           headerShown: true,
-          title: "Publier",
+          title: "Publish",
           headerStyle: { backgroundColor: c.bg },
           headerTintColor: c.text,
         }}

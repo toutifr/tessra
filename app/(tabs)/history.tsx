@@ -25,15 +25,15 @@ interface HistoryEntry {
 }
 
 const STATUS_LABELS: Record<string, string> = {
-  active: "Actif",
-  replaced: "Remplacé",
-  deleted: "Supprimé",
+  active: "Active",
+  replaced: "Replaced",
+  deleted: "Deleted",
 };
 
 const MODE_LABELS: Record<string, string> = {
-  free: "Gratuit",
-  paid: "Payant",
-  replaced: "Remplacement",
+  free: "Free",
+  paid: "Paid",
+  replaced: "Replacement",
 };
 
 type FilterType = "all" | "active" | "replaced";
@@ -77,7 +77,7 @@ async function fetchHistory(uid: string, filter: FilterType): Promise<HistoryEnt
 }
 
 function formatDate(dateStr: string) {
-  return new Date(dateStr).toLocaleDateString("fr-FR", {
+  return new Date(dateStr).toLocaleDateString("en-US", {
     day: "numeric",
     month: "short",
     year: "numeric",
@@ -122,7 +122,7 @@ const HistoryCard = memo(function HistoryCard({
         </View>
         <Text style={[styles.cardDate, { color: c.textTertiary }]}>{formatDate(item.started_at)}</Text>
         {item.ended_at && (
-          <Text style={[styles.cardDate, { color: c.textTertiary }]}>Fin: {formatDate(item.ended_at)}</Text>
+          <Text style={[styles.cardDate, { color: c.textTertiary }]}>Ended: {formatDate(item.ended_at)}</Text>
         )}
       </View>
     </View>
@@ -161,14 +161,14 @@ export default function HistoryScreen() {
   );
 
   const filters: { key: FilterType; label: string }[] = [
-    { key: "all", label: "Tout" },
-    { key: "active", label: "Actif" },
-    { key: "replaced", label: "Remplacé" },
+    { key: "all", label: "All" },
+    { key: "active", label: "Active" },
+    { key: "replaced", label: "Replaced" },
   ];
 
   return (
     <View style={[styles.container, { backgroundColor: c.bg }]}>
-      <Text style={[styles.title, { color: c.text }]}>Mes publications</Text>
+      <Text style={[styles.title, { color: c.text }]}>My publications</Text>
 
       <View style={styles.filterRow}>
         {filters.map((f) => (
@@ -209,7 +209,7 @@ export default function HistoryScreen() {
           }
           ListEmptyComponent={
             <View style={styles.empty}>
-              <Text style={[styles.emptyText, { color: c.textTertiary }]}>Aucune publication</Text>
+              <Text style={[styles.emptyText, { color: c.textTertiary }]}>No publications yet</Text>
             </View>
           }
         />

@@ -49,8 +49,8 @@ export default function TabLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: "Carte",
-          tabBarLabel: "Carte",
+          title: "Map",
+          tabBarLabel: "Map",
           // Pas de freezeOnBlur sur la carte (Mapbox) — prudence
           tabBarIcon: tabIcon("map", "map-outline"),
         }}
@@ -58,8 +58,8 @@ export default function TabLayout() {
       <Tabs.Screen
         name="discover"
         options={{
-          title: "Découvrir",
-          tabBarLabel: "Découvrir",
+          title: "Discover",
+          tabBarLabel: "Discover",
           freezeOnBlur: true,
           tabBarIcon: tabIcon("compass", "compass-outline"),
         }}
@@ -67,8 +67,8 @@ export default function TabLayout() {
       <Tabs.Screen
         name="history"
         options={{
-          title: "Historique",
-          tabBarLabel: "Historique",
+          title: "History",
+          tabBarLabel: "History",
           freezeOnBlur: true,
           tabBarIcon: tabIcon("time", "time-outline"),
         }}
@@ -76,8 +76,8 @@ export default function TabLayout() {
       <Tabs.Screen
         name="profile"
         options={{
-          title: "Profil",
-          tabBarLabel: "Profil",
+          title: "Profile",
+          tabBarLabel: "Profile",
           freezeOnBlur: true,
           tabBarIcon: tabIcon("person", "person-outline"),
         }}

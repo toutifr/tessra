@@ -17,11 +17,11 @@ export default {
       bundleIdentifier: "com.tessra.app",
       infoPlist: {
         NSLocationWhenInUseUsageDescription:
-          "Piri utilise votre position pour vous montrer les carrés autour de vous.",
+          "Piri uses your location to show the tiles around you.",
         NSCameraUsageDescription:
-          "Piri a besoin de votre caméra pour publier des images.",
+          "Piri needs your camera to publish photos.",
         NSPhotoLibraryUsageDescription:
-          "Piri a besoin d'accéder à vos photos pour publier des images.",
+          "Piri needs access to your photos to publish them.",
         ITSAppUsesNonExemptEncryption: false,
       },
       usesAppleSignIn: true,

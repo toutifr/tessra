@@ -27,10 +27,10 @@ import { sectorLabel } from "../../src/lib/sector";
 import { useThemeColors, fonts, spacing, radii, shadows, palette } from "../../src/theme";
 
 const STATUS_LABELS: Record<SquareStatus, string> = {
-  libre: "Libre",
-  occupe: "Occupé",
-  signale: "Signalé",
-  bloque: "Bloqué",
+  libre: "Free",
+  occupe: "Taken",
+  signale: "Reported",
+  bloque: "Blocked",
 };
 
 export default function SquareDetailScreen() {
@@ -137,7 +137,7 @@ export default function SquareDetailScreen() {
   const handleAction = () => {
     if (!square) return;
     if (activeShield) {
-      Alert.alert("Protégée", `Cette case est protégée jusqu'à ${new Date(activeShield.expires_at).toLocaleTimeString()}`);
+      Alert.alert("Protected", `This tile is protected until ${new Date(activeShield.expires_at).toLocaleTimeString()}`);
       return;
     }
     if (square.status === "libre") {
@@ -162,11 +162,11 @@ export default function SquareDetailScreen() {
     if (!square) return;
     const result = await activateShield(square.id, tier);
     if (result) {
-      Alert.alert("Bouclier activé !", `Votre case est protégée.`);
+      Alert.alert("Shield activated!", `Your tile is protected.`);
       const shield = await getActiveShield(square.id);
       setActiveShield(shield);
     } else {
-      Alert.alert("Erreur", "Impossible d'activer le bouclier.");
+      Alert.alert("Error", "Could not activate the shield.");
     }
   };
 
@@ -182,7 +182,7 @@ export default function SquareDetailScreen() {
       if (e instanceof InsufficientTesselsError) {
         router.push(`/paywall?need=${e.need - e.have}`);
       } else {
-        Alert.alert("Erreur", e instanceof Error ? e.message : "Impossible de renforcer");
+        Alert.alert("Error", e instanceof Error ? e.message : "Could not fortify");
       }
     } finally {
       setFortifying(false);
@@ -201,13 +201,13 @@ export default function SquareDetailScreen() {
   };
 
   const getActionLabel = (sq: Square): string | null => {
-    if (activeShield) return "Case protégée";
+    if (activeShield) return "Tile protected";
     switch (sq.status) {
       case "libre":
-        return "Publier gratuitement";
+        return "Publish for free";
       case "occupe": {
         const price = getMinPrice(sq);
-        return `Prendre cette place — ${price} ⬡`;
+        return `Take over — ${price} ⬡`;
       }
       default:
         return null;
@@ -227,7 +227,7 @@ export default function SquareDetailScreen() {
   if (!square) {
     return (
       <View style={[styles.loading, { backgroundColor: c.bg }]}>
-        <Text style={{ color: c.textSecondary }}>Case introuvable</Text>
+        <Text style={{ color: c.textSecondary }}>Tile not found</Text>
       </View>
     );
   }
@@ -251,7 +251,7 @@ export default function SquareDetailScreen() {
           />
           {isReported && (
             <View style={[styles.reportedOverlay, { backgroundColor: c.overlay }]}>
-              <Text style={styles.reportedText}>Contenu signalé</Text>
+              <Text style={styles.reportedText}>Reported content</Text>
             </View>
           )}
         </View>
@@ -278,7 +278,7 @@ export default function SquareDetailScreen() {
               {activeShield.tier === "gold" ? "🥇" : activeShield.tier === "silver" ? "🥈" : "🥉"}
             </Text>
             <Text style={[styles.shieldText, { color: palette.warning }]}>
-              {activeShield.tier === "gold" ? "Or" : activeShield.tier === "silver" ? "Argent" : "Bronze"}
+              {activeShield.tier === "gold" ? "Gold" : activeShield.tier === "silver" ? "Silver" : "Bronze"}
             </Text>
           </View>
         )}
@@ -323,7 +323,7 @@ export default function SquareDetailScreen() {
                 styles.followLabel,
                 { color: isFollowingOwner ? c.primaryText : c.primary },
               ]}>
-                {isFollowingOwner ? "Suivi" : "Suivre"}
+                {isFollowingOwner ? "Following" : "Follow"}
               </Text>
             </Pressable>
           )}
@@ -333,7 +333,7 @@ export default function SquareDetailScreen() {
       {/* Price Card */}
       <View style={[styles.priceCard, { backgroundColor: c.bgSecondary, borderColor: c.cardBorder }, shadows.sm]}>
         <Text style={[styles.priceLabel, { color: c.textSecondary }]}>
-          {square.status === "libre" ? "Publication" : "Prix minimum"}
+          {square.status === "libre" ? "Publication" : "Minimum price"}
         </Text>
         {square.status !== "libre" && rushActive ? (
           <View style={styles.rushPriceRow}>
@@ -342,12 +342,12 @@ export default function SquareDetailScreen() {
             </Text>
             <Text style={[styles.price, { color: c.text }]}>{minPrice} ⬡</Text>
             <View style={styles.rushBadge}>
-              <Text style={styles.rushBadgeText}>🔥 −50 %</Text>
+              <Text style={styles.rushBadgeText}>🔥 −50%</Text>
             </View>
           </View>
         ) : (
           <Text style={[styles.price, { color: c.text }]}>
-            {square.status === "libre" ? "Gratuit" : `${minPrice} ⬡`}
+            {square.status === "libre" ? "Free" : `${minPrice} ⬡`}
           </Text>
         )}
         {square.status !== "libre" && (
@@ -357,7 +357,7 @@ export default function SquareDetailScreen() {
         )}
         {square.last_price > 0 && (
           <Text style={[styles.priceDetail, { color: c.textTertiary }]}>
-            Dernier prix : {square.last_price} ⬡
+            Last price: {square.last_price} ⬡
           </Text>
         )}
       </View>
@@ -385,12 +385,12 @@ export default function SquareDetailScreen() {
       {/* Shield Activation (owner) */}
       {isOwner && !activeShield && (
         <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: c.text }]}>Protéger cette case</Text>
+          <Text style={[styles.sectionTitle, { color: c.text }]}>Protect this tile</Text>
           <View style={styles.shieldOptions}>
             {([
-              { tier: "bronze" as const, label: "Bronze", desc: "1h — Gratuit (1/jour)", color: palette.bronze },
-              { tier: "silver" as const, label: "Argent", desc: "6h — 150 ⬡", color: palette.silver },
-              { tier: "gold" as const, label: "Or", desc: "24h — 500 ⬡", color: palette.gold },
+              { tier: "bronze" as const, label: "Bronze", desc: "1h — Free (1/day)", color: palette.bronze },
+              { tier: "silver" as const, label: "Silver", desc: "6h — 150 ⬡", color: palette.silver },
+              { tier: "gold" as const, label: "Gold", desc: "24h — 500 ⬡", color: palette.gold },
             ]).map((opt) => (
               <Pressable
                 key={opt.tier}
@@ -416,10 +416,10 @@ export default function SquareDetailScreen() {
       {/* Fortify (owner) — augmente le prix de reprise, remet le decay à zéro */}
       {isOwner && square.status === "occupe" && square.last_price < 10000 && (
         <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: c.text }]}>Renforcer cette case</Text>
+          <Text style={[styles.sectionTitle, { color: c.text }]}>Fortify this tile</Text>
           <Text style={[styles.shieldOptionDesc, { color: c.textTertiary }]}>
-            Rends ta case plus chère à reprendre. Prix actuel : {square.last_price} ⬡ → un
-            attaquant paiera au moins {minTakePrice(square.last_price)} ⬡.
+            Make your tile more expensive to take. Current price: {square.last_price} ⬡ → an
+            attacker will pay at least {minTakePrice(square.last_price)} ⬡.
           </Text>
           <View style={[styles.shieldOptions, { marginTop: spacing.sm }]}>
             {[100, 500, 1000].map((amount) => (
@@ -437,7 +437,7 @@ export default function SquareDetailScreen() {
                 <View style={styles.shieldInfo}>
                   <Text style={[styles.shieldOptionTitle, { color: c.text }]}>+{amount} ⬡</Text>
                   <Text style={[styles.shieldOptionDesc, { color: c.textTertiary }]}>
-                    {tesselsToEur(amount)} — reprise min. {minTakePrice(Math.min(10000, square.last_price + amount))} ⬡
+                    {tesselsToEur(amount)} — min. takeover {minTakePrice(Math.min(10000, square.last_price + amount))} ⬡
                   </Text>
                 </View>
               </Pressable>
@@ -450,7 +450,7 @@ export default function SquareDetailScreen() {
       {history.length > 1 && (
         <View style={styles.section}>
           <Text style={[styles.sectionTitle, { color: c.text }]}>
-            Historique ({history.length})
+            History ({history.length})
           </Text>
           {history.map((pub) => (
             <View
@@ -469,14 +469,14 @@ export default function SquareDetailScreen() {
               )}
               <View style={styles.historyInfo}>
                 <Text style={[styles.historyStatus, { color: c.text }]}>
-                  {pub.status === "active" ? "Actuelle" : "Remplacée"}
+                  {pub.status === "active" ? "Current" : "Replaced"}
                 </Text>
                 <Text style={[styles.historyDate, { color: c.textTertiary }]}>
-                  {new Date(pub.created_at).toLocaleDateString("fr-FR")}
+                  {new Date(pub.created_at).toLocaleDateString("en-US")}
                 </Text>
               </View>
               <Text style={[styles.historyPrice, { color: c.primary }]}>
-                {pub.price_paid ? `${pub.price_paid} ⬡` : "Gratuit"}
+                {pub.price_paid ? `${pub.price_paid} ⬡` : "Free"}
               </Text>
             </View>
           ))}

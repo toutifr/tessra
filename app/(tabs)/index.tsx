@@ -282,7 +282,11 @@ export default function MapScreen() {
             (tuiles photos, grille, outlines), contrairement au mode JS dont les
             CircleLayers peuvent être recouverts par les layers insérés après coup. */}
         {userLocation && (
-          <MapboxGL.UserLocation visible renderMode="native" androidRenderMode="normal" />
+          <MapboxGL.UserLocation
+            visible
+            renderMode={MapboxGL.UserLocationRenderMode.Native}
+            androidRenderMode="normal"
+          />
         )}
       </MapboxGL.MapView>
 

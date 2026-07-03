@@ -29,12 +29,12 @@ export default class ErrorBoundary extends Component<Props, State> {
     if (this.state.hasError) {
       return (
         <View style={styles.container}>
-          <Text style={styles.title}>Oups !</Text>
+          <Text style={styles.title}>Oops!</Text>
           <Text style={styles.message}>
-            Une erreur inattendue s'est produite.
+            An unexpected error occurred.
           </Text>
           <Pressable style={styles.button} onPress={this.handleRetry}>
-            <Text style={styles.buttonText}>Réessayer</Text>
+            <Text style={styles.buttonText}>Retry</Text>
           </Pressable>
         </View>
       );

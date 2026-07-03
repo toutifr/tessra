@@ -34,7 +34,7 @@ export async function purchaseTesselPack(sku: string): Promise<number> {
     type: "in-app",
   });
 
-  if (!purchase) throw new Error("Achat annulé");
+  if (!purchase) throw new Error("Purchase canceled");
 
   const receipt =
     Platform.OS === "ios" ? purchase.transactionReceipt : purchase.purchaseToken;

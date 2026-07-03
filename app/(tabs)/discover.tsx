@@ -46,29 +46,29 @@ const IMAGE_SIZE = Dimensions.get("window").width;
 function relativeTime(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
   const min = Math.floor(diff / 60000);
-  if (min < 1) return "à l'instant";
-  if (min < 60) return `il y a ${min} min`;
+  if (min < 1) return "just now";
+  if (min < 60) return `${min} min ago`;
   const h = Math.floor(min / 60);
-  if (h < 24) return `il y a ${h} h`;
+  if (h < 24) return `${h}h ago`;
   const d = Math.floor(h / 24);
-  return `il y a ${d} j`;
+  return `${d}d ago`;
 }
 
 const LEADERBOARD_KINDS: { kind: LeaderboardKind; label: string }[] = [
-  { kind: "tiles", label: "Cases" },
+  { kind: "tiles", label: "Tiles" },
   { kind: "votes", label: "Votes" },
-  { kind: "explorer", label: "Explorateur" },
+  { kind: "explorer", label: "Explorer" },
 ];
 
 const TEAM_EMOJIS = ["⬡", "🔥", "🌍", "🚀", "🦅", "🐺", "🌊", "⚡"];
 
 function remainingLabel(iso: string): string {
   const diff = new Date(iso).getTime() - Date.now();
-  if (diff <= 0) return "terminé";
+  if (diff <= 0) return "ended";
   const h = Math.floor(diff / 3600000);
-  if (h >= 24) return `${Math.floor(h / 24)} j ${h % 24} h`;
+  if (h >= 24) return `${Math.floor(h / 24)}d ${h % 24}h`;
   const m = Math.floor((diff % 3600000) / 60000);
-  return `${h} h ${m} min`;
+  return `${h}h ${m}m`;
 }
 
 interface TeamData {
@@ -121,7 +121,7 @@ const FeedCard = memo(function FeedCard({
         </View>
         {item.is_shielded && (
           <View style={[styles.shieldBadge, { backgroundColor: `${palette.warning}20` }]}>
-            <Text style={[styles.shieldBadgeText, { color: palette.warning }]}>🛡️ Protégée</Text>
+            <Text style={[styles.shieldBadgeText, { color: palette.warning }]}>🛡️ Protected</Text>
           </View>
         )}
       </View>
@@ -163,7 +163,7 @@ const FeedCard = memo(function FeedCard({
             onPress={() => onOpen(item.square_id)}
           >
             <Text style={[styles.takeText, { color: c.primaryText }]}>
-              Prendre — {item.min_price} ⬡
+              Take over — {item.min_price} ⬡
             </Text>
           </PressableScale>
         )}
@@ -359,7 +359,7 @@ export default function DiscoverScreen() {
       setTeamName("");
       await refreshTeam();
     } catch (e) {
-      Alert.alert("Erreur", e instanceof Error ? e.message : "Impossible de créer la team");
+      Alert.alert("Error", e instanceof Error ? e.message : "Could not create the team");
     } finally {
       setTeamBusy(false);
     }
@@ -376,8 +376,8 @@ export default function DiscoverScreen() {
     } catch (e) {
       const msg = e instanceof Error ? e.message : "";
       Alert.alert(
-        "Erreur",
-        msg.includes("Already in a team") ? "Tu es déjà dans une team." : "Impossible de rejoindre la team",
+        "Error",
+        msg.includes("Already in a team") ? "You're already in a team." : "Could not join the team",
       );
     } finally {
       setTeamBusy(false);
@@ -386,10 +386,10 @@ export default function DiscoverScreen() {
 
   const handleLeaveTeam = () => {
     if (!userId) return;
-    Alert.alert("Quitter la team", "Tu perdras ta contribution au défi en cours. Continuer ?", [
-      { text: "Annuler", style: "cancel" },
+    Alert.alert("Leave team", "You'll lose your contribution to the current challenge. Continue?", [
+      { text: "Cancel", style: "cancel" },
       {
-        text: "Quitter",
+        text: "Leave",
         style: "destructive",
         onPress: async () => {
           try {
@@ -406,7 +406,7 @@ export default function DiscoverScreen() {
   const questsBanner =
     quests.length > 0 ? (
       <View style={[styles.questsBanner, { backgroundColor: c.bgSecondary, borderColor: c.cardBorder }]}>
-        <Text style={[styles.questsTitle, { color: c.text }]}>Quêtes du jour</Text>
+        <Text style={[styles.questsTitle, { color: c.text }]}>Daily quests</Text>
         {quests.slice(0, 3).map((q) => {
           const done = q.progress >= q.target;
           return (
@@ -437,7 +437,7 @@ export default function DiscoverScreen() {
                   disabled={!!claiming}
                 >
                   <Text style={[styles.claimText, { color: c.primaryText }]}>
-                    Réclamer +{q.reward} ⬡
+                    Claim +{q.reward} ⬡
                   </Text>
                 </PressableScale>
               ) : (
@@ -457,7 +457,7 @@ export default function DiscoverScreen() {
       <View style={[styles.segmented, { backgroundColor: c.bgTertiary }]}>
         {([
           { key: "feed" as const, label: "Feed" },
-          { key: "leaderboard" as const, label: "Classement" },
+          { key: "leaderboard" as const, label: "Rankings" },
           { key: "team" as const, label: "Team" },
         ]).map((s) => (
           <Pressable
@@ -503,7 +503,7 @@ export default function DiscoverScreen() {
             }
             ListEmptyComponent={
               <Text style={[styles.emptyText, { color: c.textTertiary }]}>
-                Rien à découvrir pour l'instant. Reviens plus tard !
+                Nothing to discover yet. Come back later!
               </Text>
             }
             ListFooterComponent={
@@ -559,7 +559,7 @@ export default function DiscoverScreen() {
               removeClippedSubviews
               ListEmptyComponent={
                 <Text style={[styles.emptyText, { color: c.textTertiary }]}>
-                  Pas encore de classement.
+                  No rankings yet.
                 </Text>
               }
               contentContainerStyle={styles.lbContent}
@@ -578,7 +578,7 @@ export default function DiscoverScreen() {
                 {challenge.my_team.name}
               </Text>
               <Text style={[styles.teamHeaderMeta, { color: c.textTertiary }]}>
-                {challenge.my_team.member_count} membre{challenge.my_team.member_count > 1 ? "s" : ""} · rang #{challenge.my_team.rank}
+                {challenge.my_team.member_count} member{challenge.my_team.member_count > 1 ? "s" : ""} · rank #{challenge.my_team.rank}
               </Text>
             </View>
           </View>
@@ -593,15 +593,15 @@ export default function DiscoverScreen() {
               </View>
               <View style={styles.challengeStat}>
                 <Text style={[styles.challengeValue, { color: c.primary }]}>#{challenge.my_team.rank}</Text>
-                <Text style={[styles.challengeStatLabel, { color: c.textSecondary }]}>Rang</Text>
+                <Text style={[styles.challengeStatLabel, { color: c.textSecondary }]}>Rank</Text>
               </View>
               <View style={styles.challengeStat}>
                 <Text style={[styles.challengeValue, { color: c.primary }]}>{remainingLabel(challenge.ends_at)}</Text>
-                <Text style={[styles.challengeStatLabel, { color: c.textSecondary }]}>Restant</Text>
+                <Text style={[styles.challengeStatLabel, { color: c.textSecondary }]}>Remaining</Text>
               </View>
             </View>
             <Text style={[styles.podiumHint, { color: c.textSecondary }]}>
-              Podium lundi : +200/+100/+50 ⬡ par membre
+              Podium Monday: +200/+100/+50 ⬡ per member
             </Text>
           </View>
 
@@ -630,7 +630,7 @@ export default function DiscoverScreen() {
                   numberOfLines={1}
                 >
                   {t.name}
-                  {isMine ? " (ta team)" : ""}
+                  {isMine ? " (your team)" : ""}
                 </Text>
                 <Text style={[styles.teamRowMembers, { color: c.textTertiary }]}>{t.member_count} 👤</Text>
                 <Text style={[styles.lbValue, { color: c.primary }]}>{t.score}</Text>
@@ -639,7 +639,7 @@ export default function DiscoverScreen() {
           })}
 
           <Pressable style={styles.leaveButton} onPress={handleLeaveTeam}>
-            <Text style={[styles.leaveText, { color: c.textTertiary }]}>Quitter la team</Text>
+            <Text style={[styles.leaveText, { color: c.textTertiary }]}>Leave team</Text>
           </Pressable>
         </ScrollView>
       ) : (
@@ -647,10 +647,10 @@ export default function DiscoverScreen() {
         <ScrollView contentContainerStyle={styles.teamContent}>
           <View style={[styles.introCard, { backgroundColor: c.primarySoft }]}>
             <Text style={styles.introEmoji}>⬡</Text>
-            <Text style={[styles.introTitle, { color: c.text }]}>Unissez-vous pour remplir la mosaïque</Text>
+            <Text style={[styles.introTitle, { color: c.text }]}>Join forces to fill the mosaic</Text>
             <Text style={[styles.introText, { color: c.textSecondary }]}>
-              Rejoins une team, cumulez vos prises et grimpez au classement hebdo. Podium lundi :
-              +200/+100/+50 ⬡ par membre.
+              Join a team, stack your takeovers and climb the weekly rankings. Podium Monday:
+              +200/+100/+50 ⬡ per member.
             </Text>
           </View>
 
@@ -663,7 +663,7 @@ export default function DiscoverScreen() {
                 ]}
                 value={teamName}
                 onChangeText={setTeamName}
-                placeholder="Nom de la team"
+                placeholder="Team name"
                 placeholderTextColor={c.textTertiary}
                 maxLength={24}
                 autoFocus
@@ -687,7 +687,7 @@ export default function DiscoverScreen() {
                   style={[styles.createCancel, { borderColor: c.border }]}
                   onPress={() => setShowCreateForm(false)}
                 >
-                  <Text style={{ color: c.textSecondary, fontWeight: fonts.weights.medium }}>Annuler</Text>
+                  <Text style={{ color: c.textSecondary, fontWeight: fonts.weights.medium }}>Cancel</Text>
                 </Pressable>
                 <PressableScale
                   style={[
@@ -700,7 +700,7 @@ export default function DiscoverScreen() {
                   onPress={handleCreateTeam}
                   disabled={teamBusy || !teamName.trim()}
                 >
-                  <Text style={{ color: c.primaryText, fontWeight: fonts.weights.bold }}>Créer</Text>
+                  <Text style={{ color: c.primaryText, fontWeight: fonts.weights.bold }}>Create</Text>
                 </PressableScale>
               </View>
             </View>
@@ -713,12 +713,12 @@ export default function DiscoverScreen() {
               ]}
               onPress={() => setShowCreateForm(true)}
             >
-              <Text style={[styles.createTeamText, { color: c.primaryText }]}>Créer une team</Text>
+              <Text style={[styles.createTeamText, { color: c.primaryText }]}>Create a team</Text>
             </PressableScale>
           )}
 
           {teams.length > 0 && (
-            <Text style={[styles.teamSectionTitle, { color: c.text }]}>Rejoindre une team</Text>
+            <Text style={[styles.teamSectionTitle, { color: c.text }]}>Join a team</Text>
           )}
           {teams.map((t) => (
             <View key={t.id} style={[styles.teamRow, { borderBottomColor: c.separator }]}>
@@ -735,7 +735,7 @@ export default function DiscoverScreen() {
                 onPress={() => handleJoinTeam(t)}
                 disabled={teamBusy}
               >
-                <Text style={[styles.joinText, { color: c.primaryText }]}>Rejoindre</Text>
+                <Text style={[styles.joinText, { color: c.primaryText }]}>Join</Text>
               </PressableScale>
             </View>
           ))}
@@ -786,7 +786,7 @@ const LeaderboardLine = memo(function LeaderboardLine({
         numberOfLines={1}
       >
         {row.username}
-        {isMe ? " (toi)" : ""}
+        {isMe ? " (you)" : ""}
       </Text>
       <Text style={[styles.lbValue, { color: c.primary }]}>{row.value}</Text>
     </View>

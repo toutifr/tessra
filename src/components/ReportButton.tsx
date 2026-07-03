@@ -5,9 +5,9 @@ import { useThemeColors, fonts, spacing, radii } from "../theme";
 
 const REASONS = [
   { key: "spam", label: "Spam" },
-  { key: "explicit", label: "Contenu inapproprié" },
-  { key: "harassment", label: "Harcèlement / Haine" },
-  { key: "other", label: "Fraude / Autre" },
+  { key: "explicit", label: "Inappropriate content" },
+  { key: "harassment", label: "Harassment / Hate" },
+  { key: "other", label: "Fraud / Other" },
 ] as const;
 
 interface Props {
@@ -36,11 +36,11 @@ export default function ReportButton({ publicationId }: Props) {
 
       if (error) throw error;
 
-      Alert.alert("Signalement envoyé", "Merci, notre équipe va examiner ce contenu.");
+      Alert.alert("Report sent", "Thanks, our team will review this content.");
       setShowReasons(false);
     } catch (e: unknown) {
-      const message = e instanceof Error ? e.message : "Erreur lors du signalement";
-      Alert.alert("Erreur", message);
+      const message = e instanceof Error ? e.message : "Failed to send report";
+      Alert.alert("Error", message);
     } finally {
       setSubmitting(false);
     }
@@ -49,7 +49,7 @@ export default function ReportButton({ publicationId }: Props) {
   if (showReasons) {
     return (
       <View style={[styles.reasonsContainer, { backgroundColor: c.bgTertiary }]}>
-        <Text style={[styles.reasonsTitle, { color: c.text }]}>Raison du signalement</Text>
+        <Text style={[styles.reasonsTitle, { color: c.text }]}>Report reason</Text>
         {REASONS.map(({ key, label }) => (
           <Pressable
             key={key}
@@ -64,7 +64,7 @@ export default function ReportButton({ publicationId }: Props) {
           </Pressable>
         ))}
         <Pressable style={styles.cancelButton} onPress={() => setShowReasons(false)}>
-          <Text style={[styles.cancelText, { color: c.textTertiary }]}>Annuler</Text>
+          <Text style={[styles.cancelText, { color: c.textTertiary }]}>Cancel</Text>
         </Pressable>
       </View>
     );
@@ -75,7 +75,7 @@ export default function ReportButton({ publicationId }: Props) {
       style={({ pressed }) => [styles.reportButton, { opacity: pressed ? 0.7 : 1 }]}
       onPress={() => setShowReasons(true)}
     >
-      <Text style={[styles.reportText, { color: c.textTertiary }]}>Signaler</Text>
+      <Text style={[styles.reportText, { color: c.textTertiary }]}>Report</Text>
     </Pressable>
   );
 }

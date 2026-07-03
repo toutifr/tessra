@@ -7,5 +7,5 @@ export function sectorLabel(cellId: string): string {
   if (!match) return cellId;
   const row = Math.abs(Number(match[1]));
   const col = Math.abs(Number(match[2]));
-  return `Secteur ${row}·${col}`;
+  return `Sector ${row}·${col}`;
 }

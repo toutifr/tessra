@@ -65,15 +65,15 @@ export default function PaywallScreen() {
       }
       track("purchase_success", { sku });
       Alert.alert(
-        "Reis ajoutés !",
-        `Ton nouveau solde : ${newBalance} ⬡`,
+        "Reis added!",
+        `New balance: ${newBalance} ⬡`,
         [{ text: "OK", onPress: () => router.back() }],
       );
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : "Achat impossible";
+      const msg = e instanceof Error ? e.message : "Purchase failed";
       // Annulation utilisateur : silencieux
       if (!/cancel|annul/i.test(msg)) {
-        Alert.alert("Erreur", msg);
+        Alert.alert("Error", msg);
       }
     } finally {
       setBuying(null);
@@ -85,10 +85,10 @@ export default function PaywallScreen() {
       style={[styles.container, { backgroundColor: c.bg }]}
       contentContainerStyle={styles.content}
     >
-      <Text style={[styles.title, { color: c.text }]}>Recharge tes Reis</Text>
+      <Text style={[styles.title, { color: c.text }]}>Top up your Reis</Text>
 
       <View style={[styles.balanceCard, { backgroundColor: c.primarySoft }]}>
-        <Text style={[styles.balanceLabel, { color: c.textSecondary }]}>Solde actuel</Text>
+        <Text style={[styles.balanceLabel, { color: c.textSecondary }]}>Current balance</Text>
         {balance == null ? (
           <Text style={[styles.balanceValue, { color: c.primary }]}>…</Text>
         ) : (
@@ -100,7 +100,7 @@ export default function PaywallScreen() {
         )}
         {needAmount > 0 && (
           <Text style={[styles.needText, { color: c.error }]}>
-            Il te manque {needAmount} ⬡
+            You need {needAmount} more ⬡
           </Text>
         )}
       </View>
@@ -143,7 +143,7 @@ export default function PaywallScreen() {
       </View>
 
       <Pressable style={styles.cancelButton} onPress={() => router.back()}>
-        <Text style={[styles.cancelText, { color: c.textTertiary }]}>Plus tard</Text>
+        <Text style={[styles.cancelText, { color: c.textTertiary }]}>Maybe later</Text>
       </Pressable>
     </ScrollView>
   );

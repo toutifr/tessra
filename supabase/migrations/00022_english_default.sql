@@ -1,0 +1,8 @@
+-- App en anglais par défaut : textes joueurs côté DB.
+-- Recrée avec libellés EN : get_daily_quests (Publish 1 photo / Vote for 5 photos /
+-- Take over 1 tile), notify_publication_replaced ("{user} took your tile!"),
+-- decay_squares (avertissement "Your tile is about to expire"), crons rush-warn/rush-start
+-- ("Rush Hour in 10 minutes" / "🔥 Rush Hour!"), get_team_challenge (labels EN),
+-- award_weekly_team_challenge ("🏆 Your team won the challenge!").
+-- Corps identiques à 00017/00020/00021, seules les chaînes changent — SQL complet
+-- appliqué en live (migration "english_default", 2026-07-03).

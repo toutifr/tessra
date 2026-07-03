@@ -26,14 +26,14 @@ export default function SignInScreen() {
 
   const handleSignIn = async () => {
     if (!email || !password) {
-      Alert.alert("Erreur", "Veuillez remplir tous les champs.");
+      Alert.alert("Error", "Please fill in all fields.");
       return;
     }
     setLoading(true);
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     setLoading(false);
     if (error) {
-      Alert.alert("Erreur", error.message);
+      Alert.alert("Error", error.message);
     } else {
       router.replace("/(tabs)");
     }
@@ -46,7 +46,7 @@ export default function SignInScreen() {
       router.replace("/(tabs)");
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : "Apple Sign-In failed";
-      Alert.alert("Erreur", message);
+      Alert.alert("Error", message);
     } finally {
       setLoading(false);
     }
@@ -58,7 +58,7 @@ export default function SignInScreen() {
       await signInWithGoogle();
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : "Google Sign-In failed";
-      Alert.alert("Erreur", message);
+      Alert.alert("Error", message);
     } finally {
       setLoading(false);
     }
@@ -71,7 +71,7 @@ export default function SignInScreen() {
     >
       <View style={styles.inner}>
         <Text style={[styles.brand, { color: c.primary }]}>tessra</Text>
-        <Text style={[styles.subtitle, { color: c.textSecondary }]}>Connectez-vous</Text>
+        <Text style={[styles.subtitle, { color: c.textSecondary }]}>Sign in to your account</Text>
 
         <TextInput
           style={[styles.input, { backgroundColor: c.inputBg, borderColor: c.inputBorder, color: c.text }]}
@@ -85,7 +85,7 @@ export default function SignInScreen() {
         />
         <TextInput
           style={[styles.input, { backgroundColor: c.inputBg, borderColor: c.inputBorder, color: c.text }]}
-          placeholder="Mot de passe"
+          placeholder="Password"
           placeholderTextColor={c.textTertiary}
           value={password}
           onChangeText={setPassword}
@@ -102,13 +102,13 @@ export default function SignInScreen() {
           disabled={loading}
         >
           <Text style={[styles.buttonText, { color: c.primaryText }]}>
-            {loading ? "Connexion..." : "Se connecter"}
+            {loading ? "Signing in..." : "Sign in"}
           </Text>
         </Pressable>
 
         <View style={styles.divider}>
           <View style={[styles.dividerLine, { backgroundColor: c.separator }]} />
-          <Text style={[styles.dividerText, { color: c.textTertiary }]}>ou</Text>
+          <Text style={[styles.dividerText, { color: c.textTertiary }]}>or</Text>
           <View style={[styles.dividerLine, { backgroundColor: c.separator }]} />
         </View>
 
@@ -121,7 +121,7 @@ export default function SignInScreen() {
             onPress={handleAppleSignIn}
             disabled={loading}
           >
-            <Text style={[styles.socialText, { color: c.bg }]}>Continuer avec Apple</Text>
+            <Text style={[styles.socialText, { color: c.bg }]}>Continue with Apple</Text>
           </Pressable>
         )}
 
@@ -133,13 +133,13 @@ export default function SignInScreen() {
           onPress={handleGoogleSignIn}
           disabled={loading}
         >
-          <Text style={[styles.socialText, { color: c.text }]}>Continuer avec Google</Text>
+          <Text style={[styles.socialText, { color: c.text }]}>Continue with Google</Text>
         </Pressable>
 
         <Link href="/(auth)/sign-up" asChild>
           <Pressable style={styles.link}>
             <Text style={[styles.linkText, { color: c.primary }]}>
-              Pas encore de compte ? <Text style={styles.linkBold}>Inscrivez-vous</Text>
+              No account yet? <Text style={styles.linkBold}>Sign up</Text>
             </Text>
           </Pressable>
         </Link>

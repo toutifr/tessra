@@ -90,7 +90,7 @@ export default function UploadScreen() {
         : await ImagePicker.requestMediaLibraryPermissionsAsync();
 
       if (!permission.granted) {
-        Alert.alert("Permission requise", "Autorisez l'accès pour continuer.");
+        Alert.alert("Permission required", "Please allow access to continue.");
         return;
       }
 
@@ -162,14 +162,14 @@ export default function UploadScreen() {
       setImageUri(rawUri);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : JSON.stringify(e);
-      Alert.alert("Erreur image", msg);
+      Alert.alert("Image error", msg);
     }
   };
 
   const validateBid = (): number | null => {
     const price = Number(priceInput);
     if (isNaN(price) || !Number.isInteger(price) || price < minPrice) {
-      setPriceError(`Le prix minimum est ${minPrice} ⬡`);
+      setPriceError(`Minimum price is ${minPrice} ⬡`);
       return null;
     }
     setPriceError(null);
@@ -195,7 +195,7 @@ export default function UploadScreen() {
       const {
         data: { user },
       } = await getCachedUser();
-      if (!user) throw new Error("Connectez-vous pour publier");
+      if (!user) throw new Error("Sign in to publish");
 
       const response = await fetch(imageUri);
       const blob = await response.blob();
@@ -225,7 +225,7 @@ export default function UploadScreen() {
           .select("cell_id, geohash, lat, lng")
           .eq("id", squareId)
           .single();
-        if (sqError || !sq) throw sqError ?? new Error("Case introuvable");
+        if (sqError || !sq) throw sqError ?? new Error("Tile not found");
 
         const result = await supabase.rpc("publish_new_square", {
           p_geohash: sq.cell_id ?? sq.geohash,
@@ -240,7 +240,7 @@ export default function UploadScreen() {
         track("publish", { square_id: squareId });
       } else if (cellId) {
         const cell = cellFromId(cellId);
-        if (!cell) throw new Error("ID de cellule invalide");
+        if (!cell) throw new Error("Invalid cell ID");
 
         const result = await supabase.rpc("publish_new_square", {
           p_geohash: cellId,
@@ -278,10 +278,10 @@ export default function UploadScreen() {
       if (isTake) {
         hapticHeavy();
         setTimeout(hapticSuccess, 150);
-        setSuccessOverlay({ title: "Case conquise !", subtitle: `−${bid} ⬡` });
+        setSuccessOverlay({ title: "Tile conquered!", subtitle: `−${bid} ⬡` });
       } else {
         hapticSuccess();
-        setSuccessOverlay({ title: "Tesselle posée !" });
+        setSuccessOverlay({ title: "Tile placed!" });
       }
     } catch (e: unknown) {
       if (e instanceof InsufficientTesselsError) {
@@ -298,12 +298,12 @@ export default function UploadScreen() {
 
       if (typeof message === "string" && message.includes("Price too low")) {
         Alert.alert(
-          "Prix mis à jour",
-          "Le prix minimum a changé. Veuillez réessayer.",
+          "Price updated",
+          "The minimum price has changed. Please try again.",
           [{ text: "OK" }],
         );
       } else {
-        Alert.alert("Erreur", message);
+        Alert.alert("Error", message);
       }
     } finally {
       setUploading(false);
@@ -317,13 +317,13 @@ export default function UploadScreen() {
     <View style={[styles.container, { backgroundColor: c.bg }]}>
       {needsLocation && (locationError || locating) ? (
         <View style={styles.choices}>
-          <Text style={[styles.title, { color: c.text }]}>Position requise</Text>
+          <Text style={[styles.title, { color: c.text }]}>Location required</Text>
           {locating ? (
             <ActivityIndicator size="large" color={c.primary} />
           ) : (
             <>
               <Text style={[styles.locationText, { color: c.textSecondary }]}>
-                Piri a besoin de ta position : tu dois être dans la case pour publier
+                Piri needs your location: you must be inside the tile to publish
               </Text>
               <Pressable
                 style={({ pressed }) => [
@@ -333,7 +333,7 @@ export default function UploadScreen() {
                 ]}
                 onPress={requestLocation}
               >
-                <Text style={[styles.choiceText, { color: c.primaryText }]}>Réessayer</Text>
+                <Text style={[styles.choiceText, { color: c.primaryText }]}>Retry</Text>
               </Pressable>
             </>
           )}
@@ -351,8 +351,8 @@ export default function UploadScreen() {
           {isTake && (
             <View style={styles.priceSection}>
               <Text style={[styles.priceLabel, { color: c.textSecondary }]}>
-                Prix minimum : {minPrice} ⬡ ({tesselsToEur(minPrice)})
-                {rushActive ? " · 🔥 Rush Hour −50 %" : ""}
+                Minimum price: {minPrice} ⬡ ({tesselsToEur(minPrice)})
+                {rushActive ? " · 🔥 Rush Hour −50%" : ""}
               </Text>
               <TextInput
                 style={[
@@ -384,7 +384,7 @@ export default function UploadScreen() {
               ]}
               onPress={() => setImageUri(null)}
             >
-              <Text style={[styles.secondaryText, { color: c.text }]}>Changer</Text>
+              <Text style={[styles.secondaryText, { color: c.text }]}>Change</Text>
             </Pressable>
             <PressableScale
               style={[
@@ -399,7 +399,7 @@ export default function UploadScreen() {
                 <ActivityIndicator color={c.primaryText} />
               ) : (
                 <Text style={[styles.primaryText, { color: c.primaryText }]}>
-                  {isTake ? `Prendre — ${priceInput} ⬡` : "Publier"}
+                  {isTake ? `Take over — ${priceInput} ⬡` : "Publish"}
                 </Text>
               )}
             </PressableScale>
@@ -408,7 +408,7 @@ export default function UploadScreen() {
       ) : (
         <View style={styles.choices}>
           <Text style={[styles.title, { color: c.text }]}>
-            {isTake ? "Prendre cette place" : "Publier une image"}
+            {isTake ? "Take over this tile" : "Drop your photo"}
           </Text>
           {cellId ? (
             <Text style={[styles.sectorText, { color: c.textTertiary }]}>
@@ -424,7 +424,7 @@ export default function UploadScreen() {
             ]}
             onPress={() => pickImage(true)}
           >
-            <Text style={[styles.choiceText, { color: c.primaryText }]}>Prendre une photo</Text>
+            <Text style={[styles.choiceText, { color: c.primaryText }]}>Take a photo</Text>
           </PressableScale>
 
           <PressableScale
@@ -435,13 +435,13 @@ export default function UploadScreen() {
             ]}
             onPress={() => pickImage(false)}
           >
-            <Text style={[styles.choiceText, { color: c.text }]}>Choisir dans la galerie</Text>
+            <Text style={[styles.choiceText, { color: c.text }]}>Choose from gallery</Text>
           </PressableScale>
         </View>
       )}
 
       <Pressable style={styles.cancelButton} onPress={() => router.back()}>
-        <Text style={[styles.cancelText, { color: c.textTertiary }]}>Annuler</Text>
+        <Text style={[styles.cancelText, { color: c.textTertiary }]}>Cancel</Text>
       </Pressable>
 
       {successOverlay && (

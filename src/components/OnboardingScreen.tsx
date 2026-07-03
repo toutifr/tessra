@@ -24,24 +24,24 @@ interface OnboardingPage {
 const pages: OnboardingPage[] = [
   {
     icon: "grid-outline",
-    title: "Le monde est une mosaïque",
-    description: "Chaque km² de la planète est une case. Une seule photo par case.",
+    title: "The world is a mosaic",
+    description: "Every km² on Earth is a tile. One photo per tile.",
   },
   {
     icon: "location-outline",
-    title: "Sois là, c'est à toi",
-    description: "Tu es dans une case ? Publie ta photo, gratuitement. Il faut y être, vraiment.",
+    title: "Be there, own it",
+    description: "Standing in a tile? Publish your photo for free. You have to actually be there.",
   },
   {
     icon: "shield-half-outline",
-    title: "Tout se prend, rien n'est acquis",
+    title: "Everything can be taken",
     description:
-      "On peut racheter ta case. Tu récupères 50 % en Reis ⬡ — et tu peux la reprendre d'où tu veux.",
+      "Anyone can buy your tile. You get 50% back in Reis ⬡ — and you can take it back from anywhere.",
   },
   {
     icon: "sparkles-outline",
-    title: "100 ⬡ offerts",
-    description: "De quoi faire ta première conquête.",
+    title: "100 ⬡ free",
+    description: "Enough for your first conquest.",
   },
 ];
 
@@ -77,7 +77,7 @@ export default function OnboardingScreen({ onComplete }: Props) {
   return (
     <View style={[styles.container, { backgroundColor: c.bg }]}>
       <Pressable style={styles.skipButton} onPress={onComplete}>
-        <Text style={[styles.skipText, { color: c.textTertiary }]}>Passer</Text>
+        <Text style={[styles.skipText, { color: c.textTertiary }]}>Skip</Text>
       </Pressable>
 
       <FlatList
@@ -124,7 +124,7 @@ export default function OnboardingScreen({ onComplete }: Props) {
             disabled={finishing}
           >
             <Text style={[styles.ctaText, { color: c.primaryText }]}>
-              Poser ma première tesselle
+              Place my first tile
             </Text>
           </Pressable>
         )}
