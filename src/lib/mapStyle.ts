@@ -148,16 +148,16 @@ export async function getPlayfulMapStyle(): Promise<string | null> {
           l.type === "fill" &&
           (l["source-layer"] === "landcover" || l["source-layer"] === "landuse")
         ) {
-          // Biomes plats far-zoom : repaint par classe, sans outline ni pattern.
+          // Biomes plats : repaint par classe, sans outline ni pattern.
           // On drop le filter d'origine pour couvrir toutes les classes connues ;
           // les inconnues tombent en transparent (fond terre).
-          // minzoom/maxzoom d'origine supprimés : le détail du sol doit être
-          // visible à TOUS les zooms (dark-v11 le limitait aux zooms proches).
+          // Bascule franche à z7 : en dessous c'est la couche biomes monde qui
+          // rend le sol (jamais les deux en même temps → pas de superposition).
           kept.push({
             ...l,
             layout: undefined,
             filter: undefined,
-            minzoom: undefined,
+            minzoom: 7,
             maxzoom: undefined,
             paint: {
               "fill-color": BIOME_FILL_MATCH,
