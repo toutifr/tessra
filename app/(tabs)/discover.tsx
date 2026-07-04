@@ -13,6 +13,7 @@ import {
   View,
 } from "react-native";
 import { router, useFocusEffect } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { supabase } from "../../src/lib/supabase";
 import {
@@ -417,7 +418,12 @@ export default function DiscoverScreen() {
   const questsBanner =
     quests.length > 0 ? (
       <View style={[styles.questsBanner, { backgroundColor: c.bgSecondary, borderColor: c.cardBorder }]}>
-        <Text style={[styles.questsTitle, { color: c.text }]}>Daily quests</Text>
+        <View style={styles.questsHeader}>
+          <Text style={[styles.questsTitle, { color: c.text }]}>Daily quests</Text>
+          <Pressable onPress={() => router.push("/how-to-play")} hitSlop={8}>
+            <Ionicons name="help-circle-outline" size={20} color={c.textTertiary} />
+          </Pressable>
+        </View>
         {quests.slice(0, 3).map((q) => {
           const done = q.progress >= q.target;
           return (
@@ -843,7 +849,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     padding: spacing.md,
   },
-  questsTitle: { fontSize: fonts.sizes.base, fontWeight: fonts.weights.bold, marginBottom: spacing.sm },
+  questsHeader: {
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    marginBottom: spacing.sm,
+  },
+  questsTitle: { fontSize: fonts.sizes.base, fontWeight: fonts.weights.bold },
   questRow: {
     flexDirection: "row",
     alignItems: "center",

@@ -73,6 +73,16 @@ function RootLayoutInner() {
         }}
       />
       <Stack.Screen
+        name="how-to-play"
+        options={{
+          presentation: "modal",
+          headerShown: true,
+          title: "How to play",
+          headerStyle: { backgroundColor: c.bg },
+          headerTintColor: c.text,
+        }}
+      />
+      <Stack.Screen
         name="paywall"
         options={{
           presentation: "modal",

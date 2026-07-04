@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import {
   Dimensions,
   FlatList,
+  Modal,
   NativeScrollEvent,
   NativeSyntheticEvent,
   Pressable,
@@ -11,6 +12,7 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import * as Location from "expo-location";
+import HowToPlayContent from "./HowToPlayContent";
 import { useThemeColors, fonts, spacing, radii } from "../theme";
 
 const { width } = Dimensions.get("window");
@@ -36,11 +38,17 @@ const pages: OnboardingPage[] = [
     icon: "shield-half-outline",
     title: "Everything can be taken",
     description:
-      "Anyone can buy your tile. You get 50% back in Reis ⬡ — and you can take it back from anywhere.",
+      "Anyone can buy your tile in Reis ⬡ — you get 50% back and can strike back from anywhere. On site, raids cost −30%.",
+  },
+  {
+    icon: "flame-outline",
+    title: "Keep your empire alive",
+    description:
+      "Revive tiles by returning. Connect 3+ tiles into a glowing territory that earns Reis daily. Daily targets guide your next move.",
   },
   {
     icon: "sparkles-outline",
-    title: "100 ⬡ free",
+    title: "100 ⬡ to start",
     description: "Enough for your first conquest.",
   },
 ];
@@ -52,6 +60,7 @@ interface Props {
 export default function OnboardingScreen({ onComplete }: Props) {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [finishing, setFinishing] = useState(false);
+  const [showRules, setShowRules] = useState(false);
   const flatListRef = useRef<FlatList>(null);
   const c = useThemeColors();
 
@@ -115,20 +124,45 @@ export default function OnboardingScreen({ onComplete }: Props) {
         </View>
 
         {isLastPage && (
-          <Pressable
-            style={({ pressed }) => [
-              styles.ctaButton,
-              { backgroundColor: c.primary, opacity: pressed || finishing ? 0.85 : 1 },
-            ]}
-            onPress={handleFinish}
-            disabled={finishing}
-          >
-            <Text style={[styles.ctaText, { color: c.primaryText }]}>
-              Place my first tile
-            </Text>
-          </Pressable>
+          <>
+            <Pressable
+              style={({ pressed }) => [
+                styles.ctaButton,
+                { backgroundColor: c.primary, opacity: pressed || finishing ? 0.85 : 1 },
+              ]}
+              onPress={handleFinish}
+              disabled={finishing}
+            >
+              <Text style={[styles.ctaText, { color: c.primaryText }]}>
+                Place my first tile
+              </Text>
+            </Pressable>
+            <Pressable style={styles.rulesLink} onPress={() => setShowRules(true)}>
+              <Text style={[styles.rulesLinkText, { color: c.textSecondary }]}>
+                How does it all work?
+              </Text>
+            </Pressable>
+          </>
         )}
       </View>
+
+      {/* Rulebook — Modal natif car le Stack expo-router n'est pas encore monté */}
+      <Modal
+        visible={showRules}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setShowRules(false)}
+      >
+        <View style={[styles.modalContainer, { backgroundColor: c.bg }]}>
+          <View style={[styles.modalHeader, { borderBottomColor: c.separator }]}>
+            <Text style={[styles.modalTitle, { color: c.text }]}>How to play</Text>
+            <Pressable style={styles.modalClose} onPress={() => setShowRules(false)} hitSlop={12}>
+              <Ionicons name="close" size={24} color={c.textSecondary} />
+            </Pressable>
+          </View>
+          <HowToPlayContent />
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -175,4 +209,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.xxl,
   },
   ctaText: { fontSize: fonts.sizes.base, fontWeight: fonts.weights.semibold },
+  rulesLink: { marginTop: spacing.base, padding: spacing.xs },
+  rulesLinkText: { fontSize: fonts.sizes.sm, textDecorationLine: "underline" },
+
+  modalContainer: { flex: 1 },
+  modalHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: spacing.base,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  modalTitle: { fontSize: fonts.sizes.md, fontWeight: fonts.weights.semibold },
+  modalClose: { position: "absolute", right: spacing.base },
 });

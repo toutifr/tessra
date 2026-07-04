@@ -387,6 +387,14 @@ export default function ProfileScreen() {
         </View>
       )}
 
+      {/* How to play */}
+      <View style={[styles.privacyCard, { backgroundColor: c.card, borderColor: c.cardBorder, marginBottom: spacing.xl }, shadows.sm]}>
+        <PressableScale style={styles.privacyRow} onPress={() => router.push("/how-to-play")}>
+          <Text style={[styles.privacyRowText, { color: c.text }]}>📖 How to play</Text>
+          <Text style={[styles.privacyChevron, { color: c.textTertiary }]}>›</Text>
+        </PressableScale>
+      </View>
+
       {/* Account & privacy */}
       <View style={styles.privacySection}>
         <Text style={[styles.sectionTitle, { color: c.text }]}>Account & privacy</Text>
