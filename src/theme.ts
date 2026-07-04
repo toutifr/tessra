@@ -1,16 +1,23 @@
 /**
- * Tessra Design System
- * Palette: blanc + corail — dark/light auto
+ * Tessra Design System — "Minecraft-soft"
+ * Terre, herbe, or : conquête de territoire, sobre et élégant.
+ * Dark = deepslate (identité première) · Light = parchemin.
  */
 import { useColorScheme, StyleSheet, TextStyle, ViewStyle } from "react-native";
 
 // ─── Palette ──────────────────────────────────────────────
 export const palette = {
-  // Primary — warm corail
-  coral:       "#FF6B6B",
-  coralDark:   "#E85555",
-  coralLight:  "#FF8A8A",
-  coralSoft:   "#FFF0F0",
+  // Primary — grass (claim / CTA / succès)
+  grass:       "#6FA860",
+  grassDark:   "#5C8F50",
+  grassLight:  "#83B675",
+  grassSoft:   "#EAF1E4",
+
+  // Back-compat aliases (ancienne palette corail → grass)
+  coral:       "#6FA860",
+  coralDark:   "#5C8F50",
+  coralLight:  "#83B675",
+  coralSoft:   "#EAF1E4",
 
   // Neutral
   white:       "#FFFFFF",
@@ -26,26 +33,44 @@ export const palette = {
   gray900:     "#212121",
   black:       "#111111",
 
-  // Dark mode surfaces
-  dark50:      "#1C1C1E",
-  dark100:     "#2C2C2E",
-  dark200:     "#3A3A3C",
-  dark300:     "#48484A",
+  // Parchment — surfaces claires chaudes
+  parchment:      "#F4F1EA",
+  parchmentDeep:  "#EDE9DF",
+  parchmentEdge:  "#E3DDD0",
+
+  // Deepslate — surfaces sombres
+  dark50:      "#131619",
+  dark100:     "#1A1E22",
+  dark200:     "#20262B",
+  dark300:     "#2A3138",
+  darkBorder:  "#2E353C",
+  darkDeep:    "#0F1214",
+
+  // Game accents
+  gold:        "#F2B441", // Reis / valeur / territoire
+  goldDark:    "#CE9226",
+  redstone:    "#C25B52", // danger / raid
+  redstoneDark:"#AD4B42",
+  redstoneDeep:"#7A4A45", // bloqué
+  diamond:     "#5FB3BE", // info / pulse
+  diamondDark: "#3F96A2",
+  diamondLight:"#8CCAD3",
+  amber:       "#E8973A", // warning / fading
+  amberDark:   "#C97F2A",
 
   // Semantic
-  success:     "#34C759",
-  warning:     "#FF9500",
-  error:       "#FF3B30",
-  info:        "#5AC8FA",
+  success:     "#6FA860",
+  warning:     "#E8973A",
+  error:       "#C25B52",
+  info:        "#5FB3BE",
 
   // Shields
   bronze:      "#CD7F32",
   silver:      "#C0C0C0",
-  gold:        "#FFD700",
 
   // Accent — or adouci (récompenses, highlights)
   accent:      "#F2B441",
-  accentSoft:  "#FDF3DC",
+  accentSoft:  "#F8ECD4",
 } as const;
 
 // ─── Theme Tokens ─────────────────────────────────────────
@@ -88,19 +113,19 @@ export interface ThemeColors {
 }
 
 const lightColors: ThemeColors = {
-  bg:            palette.white,
-  bgSecondary:   palette.gray50,
-  bgTertiary:    palette.gray100,
+  bg:            palette.parchment,
+  bgSecondary:   palette.parchmentDeep,
+  bgTertiary:    palette.parchmentEdge,
   card:          palette.white,
-  cardBorder:    palette.gray200,
+  cardBorder:    palette.parchmentEdge,
 
   text:          palette.gray900,
   textSecondary: palette.gray600,
   textTertiary:  palette.gray400,
   textInverse:   palette.white,
 
-  primary:       palette.coral,
-  primarySoft:   palette.coralSoft,
+  primary:       palette.grassDark,
+  primarySoft:   palette.grassSoft,
   primaryText:   palette.white,
 
   accent:        palette.accent,
@@ -110,13 +135,13 @@ const lightColors: ThemeColors = {
   warning:       palette.warning,
   error:         palette.error,
 
-  border:        palette.gray200,
-  separator:     palette.gray200,
-  inputBg:       palette.gray50,
-  inputBorder:   palette.gray300,
+  border:        palette.parchmentEdge,
+  separator:     palette.parchmentEdge,
+  inputBg:       palette.white,
+  inputBorder:   palette.parchmentEdge,
   tabBar:        palette.white,
   tabBarBorder:  "rgba(0,0,0,0.06)",
-  overlay:       "rgba(0,0,0,0.4)",
+  overlay:       "rgba(19,22,25,0.5)",
 };
 
 const darkColors: ThemeColors = {
@@ -131,8 +156,8 @@ const darkColors: ThemeColors = {
   textTertiary:  palette.gray600,
   textInverse:   palette.black,
 
-  primary:       palette.coralLight,
-  primarySoft:   "rgba(255,107,107,0.15)",
+  primary:       palette.grass,
+  primarySoft:   "rgba(111,168,96,0.16)",
   primaryText:   palette.white,
 
   accent:        palette.accent,
@@ -142,13 +167,13 @@ const darkColors: ThemeColors = {
   warning:       palette.warning,
   error:         palette.error,
 
-  border:        palette.dark200,
-  separator:     palette.dark200,
+  border:        palette.darkBorder,
+  separator:     palette.dark300,
   inputBg:       palette.dark100,
   inputBorder:   palette.dark300,
-  tabBar:        palette.dark50,
+  tabBar:        palette.darkDeep,
   tabBarBorder:  "rgba(255,255,255,0.06)",
-  overlay:       "rgba(0,0,0,0.6)",
+  overlay:       "rgba(0,0,0,0.65)",
 };
 
 export function useThemeColors(): ThemeColors {
