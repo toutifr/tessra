@@ -5,6 +5,7 @@ import { useSWR } from "../lib/swr";
 import { useThemeColors, fonts, spacing, radii, shadows } from "../theme";
 
 const RUSH_COLOR = "#FF6B35";
+const PULSE_COLOR = "#4F46E5"; // electric blue/violet
 
 function pad(n: number): string {
   return n < 10 ? `0${n}` : String(n);
@@ -16,10 +17,21 @@ function pad(n: number): string {
  * - Prochain rush < 24 h : bandeau discret hh:mm.
  * - Sinon : null.
  */
-export default function RushBanner({ style }: { style?: ViewStyle }) {
+export default function RushBanner({
+  style,
+  coords,
+}: {
+  style?: ViewStyle;
+  /** [lng, lat] — quand fourni, le serveur renvoie aussi l'état Pulse local */
+  coords?: [number, number];
+}) {
   const c = useThemeColors();
-  // Cache partagé ("gameState") — servi instantanément, refetch en fond
-  const { data, refresh } = useSWR<GameState>("gameState", getGameState, 30000);
+  // Cache partagé — clé distincte quand géolocalisé (payload Pulse inclus)
+  const { data, refresh } = useSWR<GameState>(
+    coords ? "gameState:geo" : "gameState",
+    () => (coords ? getGameState(coords[1], coords[0]) : getGameState()),
+    30000,
+  );
   const state = data ?? null;
   const [now, setNow] = useState(Date.now());
 
@@ -28,19 +40,38 @@ export default function RushBanner({ style }: { style?: ViewStyle }) {
     return () => clearInterval(t);
   }, []);
 
-  // Re-fetch quand le countdown expire (fin ou début de rush)
+  // Re-fetch quand le countdown expire (fin ou début de rush / fin de pulse)
   const expired =
     !!state &&
     ((state.rush_active && state.rush_ends_at
       ? new Date(state.rush_ends_at).getTime() - now <= 0
       : false) ||
-      (!state.rush_active && new Date(state.next_rush_at).getTime() - now <= 0));
+      (!state.rush_active && new Date(state.next_rush_at).getTime() - now <= 0) ||
+      (!!state.pulse_active && !!state.pulse_ends_at
+        ? new Date(state.pulse_ends_at).getTime() - now <= 0
+        : false));
 
   useEffect(() => {
     if (expired) refresh();
   }, [expired, refresh]);
 
   if (!state) return null;
+
+  // Pulse ⚡ — priorité sur l'affichage Rush
+  if (state.pulse_active && state.pulse_ends_at) {
+    const remaining = new Date(state.pulse_ends_at).getTime() - now;
+    if (remaining > 0) {
+      const mm = Math.floor(remaining / 60000);
+      const ss = Math.floor((remaining % 60000) / 1000);
+      return (
+        <View style={[styles.banner, styles.pulse, shadows.md, style]}>
+          <Text style={styles.activeText} numberOfLines={1}>
+            ⚡ Pulse — x3 rewards · ends in {pad(mm)}:{pad(ss)}
+          </Text>
+        </View>
+      );
+    }
+  }
 
   if (state.rush_active && state.rush_ends_at) {
     const remaining = new Date(state.rush_ends_at).getTime() - now;
@@ -87,6 +118,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   active: { backgroundColor: RUSH_COLOR },
+  pulse: { backgroundColor: PULSE_COLOR, borderWidth: 1, borderColor: "#818CF8" },
   activeText: {
     color: "#fff",
     fontSize: fonts.sizes.sm,

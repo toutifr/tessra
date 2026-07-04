@@ -15,6 +15,7 @@ export interface Square {
   replacement_count: number;
   last_price: number;
   last_activity_at: string;
+  last_revived_at?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -30,6 +31,7 @@ export interface Publication {
   price_paid: number | null;
   replaced_by: string | null;
   vote_count: number;
+  is_pulse?: boolean;
   created_at: string;
 }
 

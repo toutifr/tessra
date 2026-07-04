@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, useMemo } from "react";
-import { Pressable, StyleSheet, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 import MapboxGL from "@rnmapbox/maps";
 import { Ionicons } from "@expo/vector-icons";
 import * as Location from "expo-location";
@@ -11,6 +11,8 @@ import GridLayer from "../../src/components/GridLayer";
 import TileLayer from "../../src/components/TileLayer";
 import RushBanner from "../../src/components/RushBanner";
 import { useSquares, SquareWithImage } from "../../src/hooks/useSquares";
+import { getDailyTargets, DailyTarget } from "../../src/lib/economy";
+import { useSWR } from "../../src/lib/swr";
 import { onOptimisticUpload, type OptimisticUpload } from "../../src/lib/tileEvents";
 import { useAuth } from "../../src/providers/AuthProvider";
 import { getPlayfulMapStyle } from "../../src/lib/mapStyle";
@@ -50,6 +52,35 @@ function cellsToFeatureCollection(squares: SquareWithImage[]): GeoJSON.FeatureCo
   };
 }
 
+const TARGET_META: Record<DailyTarget["kind"], { icon: string; color: string }> = {
+  scout: { icon: "📸", color: "#34C759" },
+  revive: { icon: "🔥", color: "#FFB300" },
+  raid: { icon: "⚔️", color: "#FF3B30" },
+};
+
+function targetLabel(t: DailyTarget): string {
+  switch (t.kind) {
+    case "scout":
+      return `Scout: virgin tile +${t.reward} ⬡`;
+    case "revive":
+      return `Revive your tile +${t.reward} ⬡`;
+    case "raid":
+      return "Raid: -30% on site";
+  }
+}
+
+function distanceKm(from: [number, number], lat: number, lng: number): number {
+  const R = 6371;
+  const dLat = ((lat - from[1]) * Math.PI) / 180;
+  const dLng = ((lng - from[0]) * Math.PI) / 180;
+  const s =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos((from[1] * Math.PI) / 180) *
+      Math.cos((lat * Math.PI) / 180) *
+      Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(s));
+}
+
 export default function MapScreen() {
   const { session } = useAuth();
   const meId = session?.user.id ?? null;
@@ -68,6 +99,22 @@ export default function MapScreen() {
   const squaresRef = useRef<SquareWithImage[]>([]);
 
   squaresRef.current = squares;
+
+  // Daily targets — chargés une fois la position connue (stables sur la journée)
+  const [targetsCollapsed, setTargetsCollapsed] = useState(false);
+  const { data: targets } = useSWR<DailyTarget[]>(
+    meId && userLocation ? `targets:${meId}` : null,
+    () => getDailyTargets(meId!, userLocation![1], userLocation![0]),
+    5 * 60_000,
+  );
+
+  const flyToTarget = useCallback((t: DailyTarget) => {
+    cameraRef.current?.setCamera({
+      centerCoordinate: [t.lng, t.lat],
+      zoomLevel: 14,
+      animationDuration: 800,
+    });
+  }, []);
 
   // GPS en arrière-plan : la carte s'affiche immédiatement, on recentre après.
   // watchPosition pour que le point bleu suive les déplacements.
@@ -174,12 +221,52 @@ export default function MapScreen() {
     return squares.filter((sq) => sq.image_url && sq.cell_id);
   }, [squares, currentZoom]);
 
-  // Mes cases actives → outline doré
-  const mySquaresGeoJSON = useMemo(() => {
-    if (!meId) return cellsToFeatureCollection([]);
-    return cellsToFeatureCollection(
-      squares.filter((sq) => sq.status === "occupe" && sq.owner_id === meId),
+  // Mes cases actives → outline doré. Clusters 4-adjacents de ≥3 cases →
+  // "territoire" fusionné : fill doré + outline épais.
+  const { myNormalGeoJSON, myTerritoryGeoJSON } = useMemo(() => {
+    const empty = cellsToFeatureCollection([]);
+    if (!meId) return { myNormalGeoJSON: empty, myTerritoryGeoJSON: empty };
+    const mine = squares.filter(
+      (sq) => sq.status === "occupe" && sq.owner_id === meId && sq.cell_id,
     );
+    const rc = new Map<string, [number, number]>();
+    const posIndex = new Map<string, string>(); // "r,c" -> cell_id
+    for (const sq of mine) {
+      const m = sq.cell_id!.match(/^r(-?\d+)c(-?\d+)$/);
+      if (!m) continue;
+      const pos: [number, number] = [Number(m[1]), Number(m[2])];
+      rc.set(sq.cell_id!, pos);
+      posIndex.set(`${pos[0]},${pos[1]}`, sq.cell_id!);
+    }
+    const seen = new Set<string>();
+    const territoryIds = new Set<string>();
+    for (const id of rc.keys()) {
+      if (seen.has(id)) continue;
+      const cluster: string[] = [];
+      const stack = [id];
+      seen.add(id);
+      while (stack.length) {
+        const cur = stack.pop()!;
+        cluster.push(cur);
+        const [r, col] = rc.get(cur)!;
+        for (const [dr, dc] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+          const nb = posIndex.get(`${r + dr},${col + dc}`);
+          if (nb && !seen.has(nb)) {
+            seen.add(nb);
+            stack.push(nb);
+          }
+        }
+      }
+      if (cluster.length >= 3) cluster.forEach((cid) => territoryIds.add(cid));
+    }
+    return {
+      myNormalGeoJSON: cellsToFeatureCollection(
+        mine.filter((sq) => !territoryIds.has(sq.cell_id!)),
+      ),
+      myTerritoryGeoJSON: cellsToFeatureCollection(
+        mine.filter((sq) => territoryIds.has(sq.cell_id!)),
+      ),
+    };
   }, [squares, meId]);
 
   // Cases chaudes (activité < 24 h, pas à moi) → outline orange subtil
@@ -233,11 +320,23 @@ export default function MapScreen() {
           />
         </MapboxGL.ShapeSource>
 
-        {/* Mes cases — outline doré */}
-        <MapboxGL.ShapeSource id="my-squares" shape={mySquaresGeoJSON}>
+        {/* Mes cases isolées — outline doré */}
+        <MapboxGL.ShapeSource id="my-squares" shape={myNormalGeoJSON}>
           <MapboxGL.LineLayer
             id="my-squares-outline"
             style={{ lineColor: "#FFD700", lineWidth: 2 }}
+          />
+        </MapboxGL.ShapeSource>
+
+        {/* Mes territoires (clusters ≥3) — fusion visuelle dorée */}
+        <MapboxGL.ShapeSource id="my-territories" shape={myTerritoryGeoJSON}>
+          <MapboxGL.FillLayer
+            id="my-territories-fill"
+            style={{ fillColor: "#FFD700", fillOpacity: 0.12 }}
+          />
+          <MapboxGL.LineLayer
+            id="my-territories-outline"
+            style={{ lineColor: "#FFD700", lineWidth: 3 }}
           />
         </MapboxGL.ShapeSource>
 
@@ -303,12 +402,78 @@ export default function MapScreen() {
             </View>
           </MapboxGL.MarkerView>
         )}
+
+        {/* Objectifs du jour — 3 marqueurs */}
+        {targets?.map((t) => (
+          <MapboxGL.MarkerView
+            key={`target-${t.kind}-${t.cell_id}`}
+            coordinate={[t.lng, t.lat]}
+            allowOverlap
+          >
+            <View
+              style={[
+                styles.targetDot,
+                { backgroundColor: TARGET_META[t.kind].color, opacity: t.done ? 0.5 : 1 },
+              ]}
+            >
+              <Text style={styles.targetDotIcon}>
+                {t.done ? "✓" : TARGET_META[t.kind].icon}
+              </Text>
+            </View>
+          </MapboxGL.MarkerView>
+        ))}
       </MapboxGL.MapView>
 
-      {/* Bannière Rush Hour — overlay sous la safe area */}
+      {/* Bannière Rush / Pulse — overlay sous la safe area */}
       <View style={[styles.rushOverlay, { top: insets.top + 8 }]} pointerEvents="none">
-        <RushBanner />
+        <RushBanner coords={userLocation ?? undefined} />
       </View>
+
+      {/* Objectifs du jour — carte compacte en bas à gauche */}
+      {targets && targets.length > 0 && (
+        <View style={[styles.targetsWrap, { bottom: insets.bottom + 24 }]}>
+          {targetsCollapsed ? (
+            <Pressable
+              style={({ pressed }) => [styles.targetsChip, { opacity: pressed ? 0.8 : 1 }]}
+              onPress={() => setTargetsCollapsed(false)}
+              accessibilityLabel="Show today's targets"
+            >
+              <Text style={styles.targetsChipText}>
+                🎯 {targets.filter((t) => t.done).length}/{targets.length}
+              </Text>
+            </Pressable>
+          ) : (
+            <View style={styles.targetsCard}>
+              <Pressable style={styles.targetsHeader} onPress={() => setTargetsCollapsed(true)}>
+                <Text style={styles.targetsTitle}>Today's targets</Text>
+                <Ionicons name="chevron-down" size={14} color="rgba(255,255,255,0.55)" />
+              </Pressable>
+              {targets.map((t) => (
+                <Pressable
+                  key={`row-${t.kind}-${t.cell_id}`}
+                  style={({ pressed }) => [styles.targetRow, { opacity: pressed ? 0.7 : 1 }]}
+                  onPress={() => flyToTarget(t)}
+                >
+                  <Text style={styles.targetRowIcon}>{TARGET_META[t.kind].icon}</Text>
+                  <Text
+                    style={[styles.targetRowLabel, t.done && styles.targetRowDone]}
+                    numberOfLines={1}
+                  >
+                    {targetLabel(t)}
+                  </Text>
+                  <Text style={styles.targetRowDist}>
+                    {t.done
+                      ? "✓"
+                      : userLocation
+                        ? `${distanceKm(userLocation, t.lat, t.lng).toFixed(1)} km`
+                        : ""}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+          )}
+        </View>
+      )}
 
       {/* FAB : recentrer sur ma position */}
       {userLocation && (
@@ -358,6 +523,63 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   map: { flex: 1 },
   rushOverlay: { position: "absolute", left: 12, right: 12 },
+
+  targetDot: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 2,
+    borderColor: "#FFFFFF",
+    shadowColor: "#000",
+    shadowOpacity: 0.3,
+    shadowRadius: 3,
+    shadowOffset: { width: 0, height: 1 },
+    elevation: 4,
+  },
+  targetDotIcon: { fontSize: 14, color: "#FFFFFF" },
+
+  targetsWrap: { position: "absolute", left: 12 },
+  targetsChip: {
+    backgroundColor: "rgba(28, 28, 30, 0.92)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.15)",
+    borderRadius: 18,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  targetsChipText: { color: "#FFFFFF", fontSize: 13, fontWeight: "700" },
+  targetsCard: {
+    backgroundColor: "rgba(28, 28, 30, 0.92)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.15)",
+    borderRadius: 14,
+    padding: 10,
+    width: 232,
+    shadowColor: "#000",
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 6,
+  },
+  targetsHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 6,
+  },
+  targetsTitle: { color: "#FFFFFF", fontSize: 13, fontWeight: "700" },
+  targetRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 5,
+    gap: 6,
+  },
+  targetRowIcon: { fontSize: 13 },
+  targetRowLabel: { flex: 1, color: "rgba(255,255,255,0.9)", fontSize: 12 },
+  targetRowDone: { opacity: 0.5, textDecorationLine: "line-through" },
+  targetRowDist: { color: "rgba(255,255,255,0.55)", fontSize: 11, fontWeight: "600" },
   locateFab: {
     position: "absolute",
     right: 16,

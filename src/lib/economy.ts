@@ -53,6 +53,18 @@ export interface GameState {
   rush_active: boolean;
   rush_ends_at: string | null;
   next_rush_at: string;
+  pulse_active?: boolean | null;
+  pulse_ends_at?: string | null;
+}
+
+export interface DailyTarget {
+  kind: "scout" | "revive" | "raid";
+  cell_id: string;
+  square_id: string | null;
+  lat: number;
+  lng: number;
+  reward: number;
+  done: boolean;
 }
 
 export interface TeamRow {
@@ -90,10 +102,43 @@ export interface TeamChallenge {
 
 // ─── Helpers ──────────────────────────────────────────────
 
-export async function getGameState(): Promise<GameState> {
-  const { data, error } = await supabase.rpc("get_game_state");
+export async function getGameState(lat?: number, lng?: number): Promise<GameState> {
+  const { data, error } = await supabase.rpc(
+    "get_game_state",
+    lat != null && lng != null ? { p_lat: lat, p_lng: lng } : {},
+  );
   if (error) throw error;
   return data as GameState;
+}
+
+export async function getDailyTargets(
+  userId: string,
+  lat: number,
+  lng: number,
+): Promise<DailyTarget[]> {
+  const { data, error } = await supabase.rpc("get_daily_targets", {
+    p_user_id: userId,
+    p_lat: lat,
+    p_lng: lng,
+  });
+  if (error) throw error;
+  return (data ?? []) as DailyTarget[];
+}
+
+export async function reviveSquare(
+  userId: string,
+  squareId: string,
+  lat: number,
+  lng: number,
+): Promise<{ revived_at: string; reward: number }> {
+  const { data, error } = await supabase.rpc("revive_square", {
+    p_user_id: userId,
+    p_square_id: squareId,
+    p_user_lat: lat,
+    p_user_lng: lng,
+  });
+  if (error) throw error;
+  return data as { revived_at: string; reward: number };
 }
 
 export async function createTeam(
@@ -162,12 +207,16 @@ export async function takeSquare(
   userId: string,
   imageUrl: string,
   bid?: number,
+  lat?: number,
+  lng?: number,
 ): Promise<string> {
   const { data, error } = await supabase.rpc("take_square", {
     p_square_id: squareId,
     p_user_id: userId,
     p_image_url: imageUrl,
     p_bid: bid ?? null,
+    p_user_lat: lat ?? null,
+    p_user_lng: lng ?? null,
   });
 
   if (error) {

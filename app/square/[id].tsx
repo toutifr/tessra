@@ -9,6 +9,7 @@ import {
 } from "react-native";
 import { useLocalSearchParams, router } from "expo-router";
 import { Image } from "expo-image";
+import * as Location from "expo-location";
 import { supabase, getCachedUser } from "../../src/lib/supabase";
 import { Square, SquareStatus, STATUS_COLORS, Shield } from "../../src/types/square";
 import { Publication } from "../../src/types/square";
@@ -19,12 +20,20 @@ import { useVote } from "../../src/hooks/useVote";
 import { useShield } from "../../src/hooks/useShield";
 import { useFollow } from "../../src/hooks/useFollow";
 import { minTakePrice, rushPrice, tesselsToEur } from "../../src/constants/iap";
-import { fortifySquare, getGameState, GameState, InsufficientTesselsError } from "../../src/lib/economy";
+import { fortifySquare, getGameState, GameState, InsufficientTesselsError, reviveSquare } from "../../src/lib/economy";
 import { useSWR } from "../../src/lib/swr";
 import { track } from "../../src/lib/track";
 import { hapticLight, hapticSuccess } from "../../src/lib/haptics";
 import { sectorLabel } from "../../src/lib/sector";
 import { useThemeColors, fonts, spacing, radii, shadows, palette } from "../../src/theme";
+
+/** Fraîcheur d'une case d'après sa dernière activité */
+function freshnessLabel(lastActivityAt: string): string {
+  const days = (Date.now() - new Date(lastActivityAt).getTime()) / 86_400_000;
+  if (days < 3) return "🔥 Alive";
+  if (days <= 7) return "🕯 Fading";
+  return "❄️ Cold";
+}
 
 const STATUS_LABELS: Record<SquareStatus, string> = {
   libre: "Free",
@@ -45,6 +54,7 @@ export default function SquareDetailScreen() {
   const [isFollowingOwner, setIsFollowingOwner] = useState(false);
   const [history, setHistory] = useState<Publication[]>([]);
   const [fortifying, setFortifying] = useState(false);
+  const [reviving, setReviving] = useState(false);
   const c = useThemeColors();
 
   // Game state partagé en cache — pas de round-trip si déjà chaud
@@ -189,6 +199,40 @@ export default function SquareDetailScreen() {
     }
   };
 
+  const handleRevive = async () => {
+    if (!square || !currentUserId || reviving) return;
+    setReviving(true);
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== "granted") {
+        Alert.alert("Location required", "Enable location to revive your tile on site.");
+        return;
+      }
+      const loc = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+      });
+      const res = await reviveSquare(
+        currentUserId,
+        square.id,
+        loc.coords.latitude,
+        loc.coords.longitude,
+      );
+      hapticSuccess();
+      const nowIso = new Date().toISOString();
+      setSquare({
+        ...square,
+        last_revived_at: res.revived_at ?? nowIso,
+        last_activity_at: nowIso,
+      });
+      track("revive", { square_id: square.id, reward: res.reward });
+      Alert.alert("Revived", `+${res.reward} ⬡ — tile revived!`);
+    } catch (e) {
+      Alert.alert("Error", e instanceof Error ? e.message : "Could not revive this tile");
+    } finally {
+      setReviving(false);
+    }
+  };
+
   const handleFollow = async () => {
     if (!publication) return;
     if (isFollowingOwner) {
@@ -252,6 +296,11 @@ export default function SquareDetailScreen() {
           {isReported && (
             <View style={[styles.reportedOverlay, { backgroundColor: c.overlay }]}>
               <Text style={styles.reportedText}>Reported content</Text>
+            </View>
+          )}
+          {publication.is_pulse && (
+            <View style={styles.pulseBadge}>
+              <Text style={styles.pulseBadgeText}>⚡</Text>
             </View>
           )}
         </View>
@@ -382,6 +431,28 @@ export default function SquareDetailScreen() {
         </PressableScale>
       )}
 
+      {/* Revive (owner) — sur place, remet la fraîcheur à zéro */}
+      {isOwner && square.status === "occupe" && (
+        <View style={styles.section}>
+          <Text style={[styles.freshnessLine, { color: c.textSecondary }]}>
+            {freshnessLabel(square.last_activity_at)}
+          </Text>
+          <PressableScale
+            style={[
+              styles.reviveButton,
+              { backgroundColor: c.primary, opacity: reviving ? 0.7 : 1 },
+              shadows.md,
+            ]}
+            onPress={handleRevive}
+            disabled={reviving}
+          >
+            <Text style={[styles.actionText, { color: c.primaryText }]}>
+              {reviving ? "Reviving…" : "Revive this tile"}
+            </Text>
+          </PressableScale>
+        </View>
+      )}
+
       {/* Shield Activation (owner) */}
       {isOwner && !activeShield && (
         <View style={styles.section}>
@@ -505,6 +576,30 @@ const styles = StyleSheet.create({
     borderRadius: 0,
   },
   reportedText: { color: "#fff", fontSize: fonts.sizes.lg, fontWeight: fonts.weights.bold },
+  pulseBadge: {
+    position: "absolute",
+    top: spacing.sm,
+    right: spacing.sm,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: "#4F46E5",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "#818CF8",
+  },
+  pulseBadgeText: { fontSize: 14 },
+  freshnessLine: {
+    fontSize: fonts.sizes.sm,
+    fontWeight: fonts.weights.semibold,
+    marginBottom: spacing.sm,
+  },
+  reviveButton: {
+    borderRadius: radii.full,
+    padding: spacing.base,
+    alignItems: "center",
+  },
 
   sectorText: {
     fontSize: fonts.sizes.sm,

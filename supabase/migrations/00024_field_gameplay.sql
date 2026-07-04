@@ -1,0 +1,16 @@
+-- Migration 00024: GAMEPLAY TERRAIN (appliquée en live "field_gameplay", 2026-07-04)
+-- 1. REVIVE : revive_square(user, square, lat, lng) — être physiquement sur SA tuile
+--    la ravive (last_activity_at=now, decay suspendu). 1x/20h/tuile, +5 ⬡ (3 premières
+--    du jour). squares.last_revived_at ajouté.
+-- 2. DAILY TARGETS : table daily_targets + get_daily_targets(user, lat, lng) — 3 cibles/jour :
+--    scout (cellule vierge proche, +50 ⬡ à la publication), revive (sa tuile la plus froide,
+--    +30 ⬡), raid (tuile adverse la plus proche, -30% si prise sur place). Marquage done
+--    intégré dans publish/take/revive.
+-- 3. TERRITOIRES : award_territory_income() (cron 04:15) — clusters 4-adjacents >=3 tuiles
+--    fraîches (<7j) → +10 ⬡/tuile/jour, cap 100/jour, push.
+-- 4. PULSE ⚡ : zones ~100km, fenêtre 1h/jour à heure aléatoire (9-21h locale, déterministe
+--    zone+jour, pulse_utc_start_hour/is_pulse_active). Publications x3 ⬡ + publications.is_pulse
+--    (badge permanent). Push au démarrage (cron pulse-push horaire). get_game_state(lat,lng)
+--    retourne pulse_active/pulse_ends_at.
+-- publish_new_square V4 (pulse+scout), take_square V4 (+p_user_lat/lng, raid -30% sur place).
+-- SQL complet dans l'historique Supabase.

@@ -14,7 +14,7 @@ import * as ImagePicker from "expo-image-picker";
 import * as ImageManipulator from "expo-image-manipulator";
 import * as Location from "expo-location";
 import { supabase, getCachedUser } from "../src/lib/supabase";
-import { cellFromId } from "../src/lib/kmGrid";
+import { cellAt, cellFromId, GridCell } from "../src/lib/kmGrid";
 import { emitOptimisticUpload } from "../src/lib/tileEvents";
 import { getGameState, GameState, takeSquare, InsufficientTesselsError } from "../src/lib/economy";
 import { useSWR, invalidate } from "../src/lib/swr";
@@ -45,6 +45,8 @@ export default function UploadScreen() {
   const isTake = replace === "true";
   const baseMinPrice = Number(minPriceParam ?? 0);
   const [rushActive, setRushActive] = useState(false);
+  const [raidApplied, setRaidApplied] = useState(false);
+  const [takeCell, setTakeCell] = useState<GridCell | null>(null);
   // Game state depuis le cache partagé (instantané si déjà chaud)
   const { data: gameState } = useSWR<GameState>(isTake ? "gameState" : null, getGameState, 30000);
   // Prix effectif — remisé pendant le Rush Hour (le serveur valide de toute façon)
@@ -82,6 +84,60 @@ export default function UploadScreen() {
       requestLocation();
     }
   }, [isTake, requestLocation]);
+
+  // Prise : position silencieuse (aucun prompt, non bloquant) pour la remise
+  // raid sur place — le serveur revalide de toute façon.
+  useEffect(() => {
+    if (!isTake) return;
+    (async () => {
+      try {
+        const { status } = await Location.getForegroundPermissionsAsync();
+        if (status !== "granted") return;
+        const loc = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced,
+        });
+        setUserCoords({ lat: loc.coords.latitude, lng: loc.coords.longitude });
+      } catch {
+        // silencieux — pas de remise, c'est tout
+      }
+    })();
+  }, [isTake]);
+
+  // Cellule de la case visée (pour le check "sur place" côté client)
+  useEffect(() => {
+    if (!isTake || !squareId) return;
+    (async () => {
+      const { data } = await supabase
+        .from("squares")
+        .select("cell_id, lat, lng")
+        .eq("id", squareId)
+        .single();
+      if (!data) return;
+      const cell =
+        (data.cell_id ? cellFromId(data.cell_id) : null) ?? cellAt(data.lat, data.lng);
+      setTakeCell(cell);
+    })();
+  }, [isTake, squareId]);
+
+  // Sur place = dans les bornes de la cellule visée → −30% (appliqué serveur)
+  const onSiteRaid =
+    isTake &&
+    !!userCoords &&
+    !!takeCell &&
+    userCoords.lat >= takeCell.sw.lat &&
+    userCoords.lat < takeCell.ne.lat &&
+    userCoords.lng >= takeCell.sw.lng &&
+    userCoords.lng < takeCell.ne.lng;
+
+  const effectiveMin = onSiteRaid
+    ? Math.max(100, Math.ceil((minPrice * 0.7) / 10) * 10)
+    : minPrice;
+
+  useEffect(() => {
+    if (!onSiteRaid || raidApplied) return;
+    setRaidApplied(true);
+    setPriceInput(String(effectiveMin));
+  }, [onSiteRaid, raidApplied, effectiveMin]);
 
   useEffect(() => {
     if (!isTake || !gameState?.rush_active || rushActive) return;
@@ -174,8 +230,8 @@ export default function UploadScreen() {
 
   const validateBid = (): number | null => {
     const price = Number(priceInput);
-    if (isNaN(price) || !Number.isInteger(price) || price < minPrice) {
-      setPriceError(`Minimum price is ${minPrice} ⬡`);
+    if (isNaN(price) || !Number.isInteger(price) || price < effectiveMin) {
+      setPriceError(`Minimum price is ${effectiveMin} ⬡`);
       return null;
     }
     setPriceError(null);
@@ -221,9 +277,16 @@ export default function UploadScreen() {
       } = supabase.storage.from("publications").getPublicUrl(fileName);
 
       if (isTake && squareId) {
-        // Prise payée en Tessels — à distance, pas de GPS
-        await takeSquare(squareId, user.id, publicUrl, bid ?? undefined);
-        track("take_square", { square_id: squareId, bid });
+        // Prise payée en Tessels — coords passées si connues (remise raid serveur)
+        await takeSquare(
+          squareId,
+          user.id,
+          publicUrl,
+          bid ?? undefined,
+          userCoords?.lat,
+          userCoords?.lng,
+        );
+        track("take_square", { square_id: squareId, bid, on_site: onSiteRaid });
       } else if (squareId) {
         // Case libre existante : passe par publish_new_square (GPS vérifié serveur)
         const { data: sq, error: sqError } = await supabase
@@ -357,9 +420,12 @@ export default function UploadScreen() {
           {isTake && (
             <View style={styles.priceSection}>
               <Text style={[styles.priceLabel, { color: c.textSecondary }]}>
-                Minimum price: {minPrice} ⬡ ({tesselsToEur(minPrice)})
+                Minimum price: {effectiveMin} ⬡ ({tesselsToEur(effectiveMin)})
                 {rushActive ? " · 🔥 Rush Hour −50%" : ""}
               </Text>
+              {onSiteRaid && (
+                <Text style={styles.raidNote}>⚔️ On-site raid: −30% applied</Text>
+              )}
               <TextInput
                 style={[
                   styles.priceInput,
@@ -527,6 +593,13 @@ const styles = StyleSheet.create({
   cancelText: { fontSize: fonts.sizes.base },
   priceSection: { marginBottom: spacing.base, width: "100%" },
   priceLabel: { fontSize: fonts.sizes.sm, marginBottom: spacing.sm, textAlign: "center" },
+  raidNote: {
+    color: "#34C759",
+    fontSize: fonts.sizes.sm,
+    fontWeight: fonts.weights.semibold,
+    textAlign: "center",
+    marginBottom: spacing.sm,
+  },
   priceInput: {
     borderWidth: 1,
     borderRadius: radii.md,
