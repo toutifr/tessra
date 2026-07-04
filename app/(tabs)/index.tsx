@@ -109,6 +109,7 @@ export default function MapScreen() {
     ne: { lat: number; lng: number };
   } | null>(null);
   const [optimisticUpload, setOptimisticUpload] = useState<OptimisticUpload | null>(null);
+  const [photosDimmed, setPhotosDimmed] = useState(false);
   const [styleJSON, setStyleJSON] = useState<string | null>(null);
   const { squares, fetchSquaresInViewport } = useSquares();
   const insets = useSafeAreaInsets();
@@ -457,7 +458,7 @@ export default function MapScreen() {
 
 
         {/* Photos rendues dans les tuiles — visibles à TOUS les zooms */}
-        <TileLayer />
+        <TileLayer dimmed={photosDimmed} />
 
         {/* Grille tracée directement sur la carte — pas de réseau */}
         <GridLayer bounds={viewportBounds} zoom={currentZoom} />
@@ -676,6 +677,25 @@ export default function MapScreen() {
         </View>
       )}
 
+      {/* FAB : atténuer les photos (20%) pour voir la carte derrière */}
+      <Pressable
+        style={({ pressed }) => [
+          styles.locateFab,
+          {
+            bottom: insets.bottom + (userLocation ? 84 : 24),
+            opacity: pressed ? 0.8 : 1,
+          },
+          photosDimmed && styles.fabActive,
+        ]}
+        onPress={() => {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          setPhotosDimmed((d) => !d);
+        }}
+        accessibilityLabel={photosDimmed ? "Show photos" : "Dim photos to see the map"}
+      >
+        <Ionicons name={photosDimmed ? "eye-off" : "eye"} size={22} color="#FFFFFF" />
+      </Pressable>
+
       {/* FAB : recentrer sur ma position */}
       {userLocation && (
         <Pressable
@@ -807,6 +827,10 @@ const styles = StyleSheet.create({
   targetRowLabel: { flex: 1, color: "rgba(255,255,255,0.9)", fontSize: 12 },
   targetRowDone: { opacity: 0.5, textDecorationLine: "line-through" },
   targetRowDist: { color: "rgba(255,255,255,0.55)", fontSize: 11, fontWeight: "600" },
+  fabActive: {
+    backgroundColor: palette.grass,
+    borderColor: "rgba(255,255,255,0.25)",
+  },
   locateFab: {
     position: "absolute",
     right: 16,

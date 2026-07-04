@@ -6,9 +6,9 @@ import { TILE_SERVER_URL } from "../constants/config";
  *
  * The tiles show the 1km × 1km grid with background and grid lines.
  * Photos are overlaid client-side via ImageSource for instant feedback.
- * Server-side photo compositing will be added later.
+ * `dimmed` → opacité 20% pour voir la carte derrière les photos (FAB œil).
  */
-export default function TileLayer() {
+export default function TileLayer({ dimmed = false }: { dimmed?: boolean }) {
   return (
     <MapboxGL.RasterSource
       id="tessra-tiles"
@@ -20,7 +20,7 @@ export default function TileLayer() {
       <MapboxGL.RasterLayer
         id="tessra-photo-layer"
         style={{
-          rasterOpacity: 1,
+          rasterOpacity: dimmed ? 0.2 : 1,
           rasterFadeDuration: 150,
         }}
       />
