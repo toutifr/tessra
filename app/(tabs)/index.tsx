@@ -68,15 +68,22 @@ export default function MapScreen() {
 
   squaresRef.current = squares;
 
-  // GPS en arrière-plan : la carte s'affiche immédiatement, on recentre après
+  // GPS en arrière-plan : la carte s'affiche immédiatement, on recentre après.
+  // watchPosition pour que le point bleu suive les déplacements.
   useEffect(() => {
+    let sub: Location.LocationSubscription | null = null;
     (async () => {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status === "granted") {
         const location = await Location.getCurrentPositionAsync({});
         setUserLocation([location.coords.longitude, location.coords.latitude]);
+        sub = await Location.watchPositionAsync(
+          { accuracy: Location.Accuracy.Balanced, distanceInterval: 20 },
+          (loc) => setUserLocation([loc.coords.longitude, loc.coords.latitude]),
+        );
       }
     })();
+    return () => sub?.remove();
   }, []);
 
   // Recentre la caméra dès que la position arrive
@@ -281,12 +288,16 @@ export default function MapScreen() {
             composant de localisation natif, TOUJOURS au-dessus de toutes les couches
             (tuiles photos, grille, outlines), contrairement au mode JS dont les
             CircleLayers peuvent être recouverts par les layers insérés après coup. */}
+        {/* Point bleu de position : MarkerView = vraie vue RN ancrée à la coordonnée,
+            rendue AU-DESSUS de toutes les couches Mapbox (tuiles photos, grille,
+            outlines) par construction — contrairement à UserLocation dont les
+            layers peuvent être recouverts par les sources insérées après coup. */}
         {userLocation && (
-          <MapboxGL.UserLocation
-            visible
-            renderMode={MapboxGL.UserLocationRenderMode.Native}
-            androidRenderMode="normal"
-          />
+          <MapboxGL.MarkerView coordinate={userLocation} allowOverlap>
+            <View style={styles.userDotHalo}>
+              <View style={styles.userDot} />
+            </View>
+          </MapboxGL.MarkerView>
         )}
       </MapboxGL.MapView>
 
@@ -299,6 +310,27 @@ export default function MapScreen() {
 }
 
 const styles = StyleSheet.create({
+  userDotHalo: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: "rgba(10, 132, 255, 0.25)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  userDot: {
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    backgroundColor: "#0A84FF",
+    borderWidth: 2.5,
+    borderColor: "#FFFFFF",
+    shadowColor: "#000",
+    shadowOpacity: 0.35,
+    shadowRadius: 3,
+    shadowOffset: { width: 0, height: 1 },
+    elevation: 4,
+  },
   container: { flex: 1 },
   map: { flex: 1 },
   rushOverlay: { position: "absolute", left: 12, right: 12 },

@@ -1,0 +1,12 @@
+-- RGPD : export (art. 20), suppression (art. 17), purges (art. 5).
+-- Appliqué en live (migration "gdpr_account_management").
+-- - payments.user_id nullable (anonymisation, conservation comptable)
+-- - export_my_data(p_user_id) → JSONB (profil, publications, transactions, paiements, team…)
+-- - gdpr_delete_user(p_user_id) : service role only — libère les cases, marque les
+--   publications 'removed' (régénération tuiles), purge votes/follows/exploration/
+--   quêtes/shields/ledger/events/flags/badges/history, anonymise les paiements,
+--   supprime les publications. profiles suit par cascade auth.users.
+-- - purge_old_events() (events > 180 j) — cron 'purge-events' 03:30 UTC
+-- - purge_stale_anonymous_users() (invités 90 j sans connexion, sans pubs/paiements,
+--   lots de 500) — cron 'purge-anon' 03:45 UTC
+-- SQL complet dans l'historique Supabase.

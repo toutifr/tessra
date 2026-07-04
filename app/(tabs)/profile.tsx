@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
 import {
+  ActivityIndicator,
   Alert,
+  Linking,
   Pressable,
   ScrollView,
+  Share,
   StyleSheet,
   Text,
   TextInput,
@@ -67,6 +70,8 @@ export default function ProfileScreen() {
   const [editing, setEditing] = useState(false);
   const [newUsername, setNewUsername] = useState("");
   const [showLinkSheet, setShowLinkSheet] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const isGuest = useIsGuest();
   const { stats, refetch: refetchStats } = useUserStats();
   const c = useThemeColors();
@@ -165,6 +170,73 @@ export default function ProfileScreen() {
       return;
     }
     doSignOut();
+  };
+
+  const handleExportData = async () => {
+    if (!uid || exporting) return;
+    setExporting(true);
+    try {
+      const { data: exportData, error } = await supabase.rpc("export_my_data", {
+        p_user_id: uid,
+      });
+      if (error) throw error;
+      await Share.share({ message: JSON.stringify(exportData, null, 2) });
+    } catch (e) {
+      Alert.alert("Error", e instanceof Error ? e.message : "Could not export your data.");
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const doDeleteAccount = async () => {
+    if (deleting) return;
+    setDeleting(true);
+    try {
+      const { data: res, error } = await supabase.functions.invoke("delete-account");
+      if (error) throw error;
+      if (!res?.success) throw new Error("Deletion failed.");
+      await supabase.auth.signOut().catch(() => {});
+      Alert.alert("Account deleted");
+    } catch (e) {
+      Alert.alert(
+        "Error",
+        `${e instanceof Error ? e.message : "Something went wrong."}\n\nIf this persists, contact support@piri.app`,
+      );
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const isAnonymous = session?.user.is_anonymous === true;
+
+  const handleDeleteAccount = () => {
+    Alert.alert(
+      "Delete your account?",
+      isAnonymous
+        ? "You're on a guest account — this simply erases everything."
+        : "Your photos, tiles, Reis and history will be permanently erased. This cannot be undone.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Continue",
+          style: "destructive",
+          onPress: () => {
+            if (isAnonymous) {
+              doDeleteAccount();
+              return;
+            }
+            Alert.alert(
+              "Are you absolutely sure?",
+              "Any remaining Reis balance will be lost.",
+              [
+                { text: "Cancel", style: "cancel" },
+                { text: "Delete forever", style: "destructive", onPress: doDeleteAccount },
+              ],
+            );
+          },
+        },
+      ],
+    );
   };
 
   if (loading && !profile) {
@@ -315,6 +387,38 @@ export default function ProfileScreen() {
         </View>
       )}
 
+      {/* Account & privacy */}
+      <View style={styles.privacySection}>
+        <Text style={[styles.sectionTitle, { color: c.text }]}>Account & privacy</Text>
+        <View style={[styles.privacyCard, { backgroundColor: c.card, borderColor: c.cardBorder }, shadows.sm]}>
+          <PressableScale style={styles.privacyRow} onPress={handleExportData}>
+            <Text style={[styles.privacyRowText, { color: c.text }]}>Export my data</Text>
+            {exporting ? (
+              <ActivityIndicator size="small" color={c.primary} />
+            ) : (
+              <Text style={[styles.privacyChevron, { color: c.textTertiary }]}>›</Text>
+            )}
+          </PressableScale>
+          <View style={[styles.privacyDivider, { backgroundColor: c.cardBorder }]} />
+          <PressableScale
+            style={styles.privacyRow}
+            onPress={() => Linking.openURL("https://piri.app/privacy")}
+          >
+            <Text style={[styles.privacyRowText, { color: c.text }]}>Privacy policy</Text>
+            <Text style={[styles.privacyChevron, { color: c.textTertiary }]}>›</Text>
+          </PressableScale>
+          <View style={[styles.privacyDivider, { backgroundColor: c.cardBorder }]} />
+          <PressableScale style={styles.privacyRow} onPress={handleDeleteAccount}>
+            <Text style={[styles.privacyRowText, { color: c.error }]}>Delete my account</Text>
+            {deleting ? (
+              <ActivityIndicator size="small" color={c.error} />
+            ) : (
+              <Text style={[styles.privacyChevron, { color: c.textTertiary }]}>›</Text>
+            )}
+          </PressableScale>
+        </View>
+      </View>
+
       {/* Logout */}
       <Pressable
         style={({ pressed }) => [
@@ -420,6 +524,16 @@ const styles = StyleSheet.create({
   },
   badgeIcon: { fontSize: 26, marginBottom: spacing.xs },
   badgeName: { fontSize: fonts.sizes.xs, textAlign: "center" },
+
+  privacySection: { marginBottom: spacing.xl },
+  privacyCard: { borderWidth: 1, borderRadius: radii.lg, overflow: "hidden" },
+  privacyRow: {
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    padding: spacing.base,
+  },
+  privacyRowText: { fontSize: fonts.sizes.base, fontWeight: fonts.weights.medium },
+  privacyChevron: { fontSize: fonts.sizes.lg, fontWeight: fonts.weights.semibold },
+  privacyDivider: { height: StyleSheet.hairlineWidth, marginHorizontal: spacing.base },
 
   logoutButton: {
     borderRadius: radii.md, padding: spacing.base, alignItems: "center", marginTop: spacing.sm,
