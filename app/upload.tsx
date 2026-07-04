@@ -23,8 +23,12 @@ import { track } from "../src/lib/track";
 import { hapticHeavy, hapticSuccess } from "../src/lib/haptics";
 import { sectorLabel } from "../src/lib/sector";
 import ConquestOverlay from "../src/components/ConquestOverlay";
+import LinkAccountSheet, { useIsGuest } from "../src/components/LinkAccountSheet";
 import PressableScale from "../src/components/PressableScale";
 import { useThemeColors, fonts, spacing, radii, shadows } from "../src/theme";
+
+// Une seule invite de liaison de compte par lancement d'app.
+let linkPromptShown = false;
 
 export default function UploadScreen() {
   const { squareId, cellId, replace, minPrice: minPriceParam } = useLocalSearchParams<{
@@ -50,6 +54,8 @@ export default function UploadScreen() {
   const [successOverlay, setSuccessOverlay] = useState<{ title: string; subtitle?: string } | null>(
     null,
   );
+  const [showLinkSheet, setShowLinkSheet] = useState(false);
+  const isGuest = useIsGuest();
   const c = useThemeColors();
 
   const requestLocation = useCallback(async () => {
@@ -448,9 +454,26 @@ export default function UploadScreen() {
         <ConquestOverlay
           title={successOverlay.title}
           subtitle={successOverlay.subtitle}
-          onDone={() => router.back()}
+          onDone={() => {
+            // Invité + publication libre : proposer de sauvegarder le compte
+            if (!isTake && isGuest && !linkPromptShown) {
+              linkPromptShown = true;
+              setShowLinkSheet(true);
+            } else {
+              router.back();
+            }
+          }}
         />
       )}
+
+      <LinkAccountSheet
+        visible={showLinkSheet}
+        title="Don't lose your tile!"
+        onClose={() => {
+          setShowLinkSheet(false);
+          router.back();
+        }}
+      />
     </View>
   );
 }

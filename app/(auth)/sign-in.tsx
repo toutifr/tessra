@@ -52,6 +52,20 @@ export default function SignInScreen() {
     }
   };
 
+  const handleGuestSignIn = async () => {
+    try {
+      setLoading(true);
+      const { error } = await supabase.auth.signInAnonymously();
+      if (error) throw error;
+      router.replace("/(tabs)");
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : "Guest sign-in unavailable";
+      Alert.alert("Error", message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleGoogleSignIn = async () => {
     try {
       setLoading(true);
@@ -134,6 +148,10 @@ export default function SignInScreen() {
           disabled={loading}
         >
           <Text style={[styles.socialText, { color: c.text }]}>Continue with Google</Text>
+        </Pressable>
+
+        <Pressable style={styles.link} onPress={handleGuestSignIn} disabled={loading}>
+          <Text style={[styles.linkText, { color: c.textTertiary }]}>Continue as guest</Text>
         </Pressable>
 
         <Link href="/(auth)/sign-up" asChild>

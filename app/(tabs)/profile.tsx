@@ -17,6 +17,7 @@ import { useSWR, mutate, getCached } from "../../src/lib/swr";
 import { useAuth } from "../../src/providers/AuthProvider";
 import { useUserStats } from "../../src/hooks/useUserStats";
 import AnimatedNumber from "../../src/components/AnimatedNumber";
+import LinkAccountSheet, { useIsGuest } from "../../src/components/LinkAccountSheet";
 import PressableScale from "../../src/components/PressableScale";
 import Skeleton from "../../src/components/Skeleton";
 import { useThemeColors, fonts, spacing, radii, shadows, palette, ThemeColors } from "../../src/theme";
@@ -65,6 +66,8 @@ export default function ProfileScreen() {
 
   const [editing, setEditing] = useState(false);
   const [newUsername, setNewUsername] = useState("");
+  const [showLinkSheet, setShowLinkSheet] = useState(false);
+  const isGuest = useIsGuest();
   const { stats, refetch: refetchStats } = useUserStats();
   const c = useThemeColors();
 
@@ -139,13 +142,29 @@ export default function ProfileScreen() {
     patchProfile({ avatar_url: publicUrl });
   };
 
-  const handleLogout = async () => {
+  const doSignOut = async () => {
     const { error } = await supabase.auth.signOut();
     if (error) {
       Alert.alert("Error", error.message);
     } else {
       router.replace("/(auth)/sign-in");
     }
+  };
+
+  const handleLogout = () => {
+    if (isGuest) {
+      Alert.alert(
+        "Guest account",
+        "You're on a guest account. Signing out will lose this progress unless you link an account first.",
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "Link account", onPress: () => setShowLinkSheet(true) },
+          { text: "Sign out anyway", style: "destructive", onPress: doSignOut },
+        ],
+      );
+      return;
+    }
+    doSignOut();
   };
 
   if (loading && !profile) {
@@ -230,6 +249,21 @@ export default function ProfileScreen() {
         <Text style={[styles.joinDate, { color: c.textTertiary }]}>Member since {joinDate}</Text>
       </View>
 
+      {/* Bandeau invité */}
+      {isGuest && (
+        <View style={[styles.guestBanner, { backgroundColor: c.card, borderColor: c.cardBorder }, shadows.sm]}>
+          <Text style={[styles.guestText, { color: c.textSecondary }]}>
+            Guest account — your progress lives only on this device
+          </Text>
+          <PressableScale
+            style={[styles.guestButton, { backgroundColor: c.primary }]}
+            onPress={() => setShowLinkSheet(true)}
+          >
+            <Text style={[styles.guestButtonText, { color: c.primaryText }]}>Save my account</Text>
+          </PressableScale>
+        </View>
+      )}
+
       {/* Solde Reis */}
       <View style={[styles.creditsCard, { backgroundColor: c.primarySoft }, shadows.md]}>
         <View style={styles.creditsMain}>
@@ -291,6 +325,12 @@ export default function ProfileScreen() {
       >
         <Text style={[styles.logoutText, { color: c.error }]}>Sign out</Text>
       </Pressable>
+
+      <LinkAccountSheet
+        visible={showLinkSheet}
+        onClose={() => setShowLinkSheet(false)}
+        onLinked={() => refresh()}
+      />
     </ScrollView>
   );
 }
@@ -330,6 +370,16 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm,
   },
   teamBadgeText: { fontSize: fonts.sizes.sm, fontWeight: fonts.weights.semibold },
+
+  guestBanner: {
+    borderWidth: 1, borderRadius: radii.lg, padding: spacing.base,
+    marginBottom: spacing.lg, alignItems: "center", gap: spacing.md,
+  },
+  guestText: { fontSize: fonts.sizes.sm, textAlign: "center" },
+  guestButton: {
+    borderRadius: radii.full, paddingVertical: spacing.sm + 2, paddingHorizontal: spacing.xl,
+  },
+  guestButtonText: { fontSize: fonts.sizes.base, fontWeight: fonts.weights.semibold },
 
   creditsCard: {
     flexDirection: "row", alignItems: "center", justifyContent: "center",

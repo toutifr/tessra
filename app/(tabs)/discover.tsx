@@ -35,6 +35,7 @@ import {
 import { useSWR, mutate, getCached, invalidate } from "../../src/lib/swr";
 import { useAuth } from "../../src/providers/AuthProvider";
 import RushBanner from "../../src/components/RushBanner";
+import LinkAccountSheet, { useIsGuest } from "../../src/components/LinkAccountSheet";
 import PressableScale from "../../src/components/PressableScale";
 import { FeedSkeleton, ListSkeleton } from "../../src/components/Skeleton";
 import { track } from "../../src/lib/track";
@@ -247,6 +248,8 @@ export default function DiscoverScreen() {
   const challenge = teamData?.challenge ?? null;
   const teams = teamData?.teams ?? [];
   const [teamBusy, setTeamBusy] = useState(false);
+  const [showLinkSheet, setShowLinkSheet] = useState(false);
+  const isGuest = useIsGuest();
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [teamName, setTeamName] = useState("");
   const [teamEmoji, setTeamEmoji] = useState(TEAM_EMOJIS[0]);
@@ -350,6 +353,10 @@ export default function DiscoverScreen() {
   const handleCreateTeam = async () => {
     const name = teamName.trim();
     if (!userId || !name || teamBusy) return;
+    if (isGuest) {
+      setShowLinkSheet(true);
+      return;
+    }
     setTeamBusy(true);
     try {
       await createTeam(userId, name, teamEmoji);
@@ -367,6 +374,10 @@ export default function DiscoverScreen() {
 
   const handleJoinTeam = async (team: TeamRow) => {
     if (!userId || teamBusy) return;
+    if (isGuest) {
+      setShowLinkSheet(true);
+      return;
+    }
     setTeamBusy(true);
     try {
       await joinTeam(userId, team.id);
@@ -741,6 +752,12 @@ export default function DiscoverScreen() {
           ))}
         </ScrollView>
       )}
+
+      <LinkAccountSheet
+        visible={showLinkSheet}
+        title="Link an account to join a team"
+        onClose={() => setShowLinkSheet(false)}
+      />
     </View>
   );
 }

@@ -17,6 +17,7 @@ import { useAuth } from "../src/providers/AuthProvider";
 import { track } from "../src/lib/track";
 import { hapticSuccess } from "../src/lib/haptics";
 import AnimatedNumber from "../src/components/AnimatedNumber";
+import LinkAccountSheet, { useIsGuest } from "../src/components/LinkAccountSheet";
 import PressableScale from "../src/components/PressableScale";
 import { useThemeColors, fonts, spacing, radii, shadows } from "../src/theme";
 
@@ -37,6 +38,9 @@ export default function PaywallScreen() {
   const { session } = useAuth();
   const uid = session?.user.id ?? null;
   const [buying, setBuying] = useState<string | null>(null);
+  const [showLinkSheet, setShowLinkSheet] = useState(false);
+  const [pendingSku, setPendingSku] = useState<string | null>(null);
+  const isGuest = useIsGuest();
   const c = useThemeColors();
 
   const needAmount = Number(need ?? 0);
@@ -53,8 +57,7 @@ export default function PaywallScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const handleBuy = async (sku: string) => {
-    if (buying) return;
+  const doBuy = async (sku: string) => {
     setBuying(sku);
     try {
       const newBalance = await purchaseTesselPack(sku);
@@ -78,6 +81,17 @@ export default function PaywallScreen() {
     } finally {
       setBuying(null);
     }
+  };
+
+  const handleBuy = (sku: string) => {
+    if (buying) return;
+    if (isGuest) {
+      // Invité : lier un compte avant tout achat
+      setPendingSku(sku);
+      setShowLinkSheet(true);
+      return;
+    }
+    doBuy(sku);
   };
 
   return (
@@ -145,6 +159,18 @@ export default function PaywallScreen() {
       <Pressable style={styles.cancelButton} onPress={() => router.back()}>
         <Text style={[styles.cancelText, { color: c.textTertiary }]}>Maybe later</Text>
       </Pressable>
+
+      <LinkAccountSheet
+        visible={showLinkSheet}
+        title="Link an account to buy Reis"
+        onClose={() => setShowLinkSheet(false)}
+        onLinked={() => {
+          const sku = pendingSku;
+          setPendingSku(null);
+          // Reprend l'achat après liaison (léger délai pour laisser la sheet se fermer)
+          if (sku) setTimeout(() => doBuy(sku), 400);
+        }}
+      />
     </ScrollView>
   );
 }
