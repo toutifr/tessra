@@ -211,7 +211,7 @@ export default function HistoryScreen() {
           ListEmptyComponent={
             <View style={styles.empty}>
               <Text style={[styles.emptyText, { color: c.textTertiary }]}>
-                No tiles yet. Go claim your first one on the map 📸
+                No tiles yet. Go claim your first one on the map
               </Text>
               <PressableScale
                 style={[styles.emptyButton, { backgroundColor: c.primary }, shadows.md]}

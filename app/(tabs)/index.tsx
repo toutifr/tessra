@@ -11,6 +11,7 @@ import GridLayer from "../../src/components/GridLayer";
 import TileLayer from "../../src/components/TileLayer";
 import RushBanner from "../../src/components/RushBanner";
 import PressableScale from "../../src/components/PressableScale";
+import IconLabel from "../../src/components/IconLabel";
 import { useSquares, SquareWithImage } from "../../src/hooks/useSquares";
 import { getDailyTargets, DailyTarget } from "../../src/lib/economy";
 import { useSWR } from "../../src/lib/swr";
@@ -61,10 +62,13 @@ function cellsToFeatureCollection(squares: SquareWithImage[]): GeoJSON.FeatureCo
   };
 }
 
-const TARGET_META: Record<DailyTarget["kind"], { icon: string; color: string }> = {
-  scout: { icon: "📸", color: "#34C759" },
-  revive: { icon: "🔥", color: "#FFB300" },
-  raid: { icon: "⚔️", color: "#FF3B30" },
+const TARGET_META: Record<
+  DailyTarget["kind"],
+  { icon: keyof typeof Ionicons.glyphMap; color: string }
+> = {
+  scout: { icon: "camera", color: "#34C759" },
+  revive: { icon: "flame", color: "#FFB300" },
+  raid: { icon: "flag", color: "#FF3B30" },
 };
 
 function targetLabel(t: DailyTarget): string {
@@ -182,7 +186,8 @@ export default function MapScreen() {
     const sq = standingSquare;
     if (!sq || sq.status === "libre") {
       return {
-        label: "📸 Claim this tile",
+        icon: "camera" as const,
+        label: "Claim this tile",
         bg: palette.coral,
         fg: "#FFFFFF",
         route: `/upload?cellId=${myCellId}`,
@@ -194,20 +199,23 @@ export default function MapScreen() {
       const needsRevive = Date.now() - revivedAt > REVIVE_WINDOW_MS;
       return needsRevive
         ? {
-            label: "🔥 Revive this tile",
+            icon: "flame" as const,
+            label: "Revive this tile",
             bg: palette.warning,
             fg: "#FFFFFF",
             route: `/square/${sq.id}`,
           }
         : {
-            label: "✓ Your tile",
+            icon: "checkmark-circle" as const,
+            label: "Your tile",
             bg: "rgba(28, 28, 30, 0.92)",
             fg: "#FFFFFF",
             route: `/square/${sq.id}`,
           };
     }
     return {
-      label: `⚔️ Take over — ${minTakePrice(sq.last_price ?? 0)} ⬡`,
+      icon: "flag" as const,
+      label: `Take over — ${minTakePrice(sq.last_price ?? 0)} ⬡`,
       bg: "rgba(28, 28, 30, 0.92)",
       fg: "#FFFFFF",
       route: `/square/${sq.id}`,
@@ -537,9 +545,11 @@ export default function MapScreen() {
                 { backgroundColor: TARGET_META[t.kind].color, opacity: t.done ? 0.5 : 1 },
               ]}
             >
-              <Text style={styles.targetDotIcon}>
-                {t.done ? "✓" : TARGET_META[t.kind].icon}
-              </Text>
+              <Ionicons
+                name={t.done ? "checkmark" : TARGET_META[t.kind].icon}
+                size={14}
+                color="#FFFFFF"
+              />
             </View>
           </MapboxGL.MarkerView>
         ))}
@@ -577,7 +587,13 @@ export default function MapScreen() {
             }}
             accessibilityLabel={standingCta.label}
           >
-            <Text style={[styles.ctaText, { color: standingCta.fg }]}>{standingCta.label}</Text>
+            <IconLabel
+              icon={standingCta.icon}
+              label={standingCta.label}
+              color={standingCta.fg}
+              size={16}
+              textStyle={styles.ctaText}
+            />
           </PressableScale>
         </View>
       )}
@@ -591,9 +607,14 @@ export default function MapScreen() {
               onPress={() => setTargetsCollapsed(false)}
               accessibilityLabel="Show today's targets"
             >
-              <Text style={styles.targetsChipText}>
-                🎯 {targets.filter((t) => t.done).length}/{targets.length}
-              </Text>
+              <IconLabel
+                icon="locate"
+                label={`${targets.filter((t) => t.done).length}/${targets.length}`}
+                color="#FFFFFF"
+                size={13}
+                gap={5}
+                textStyle={styles.targetsChipText}
+              />
             </Pressable>
           ) : (
             <View style={styles.targetsCard}>
@@ -607,20 +628,26 @@ export default function MapScreen() {
                   style={({ pressed }) => [styles.targetRow, { opacity: pressed ? 0.7 : 1 }]}
                   onPress={() => flyToTarget(t)}
                 >
-                  <Text style={styles.targetRowIcon}>{TARGET_META[t.kind].icon}</Text>
+                  <Ionicons
+                    name={TARGET_META[t.kind].icon}
+                    size={13}
+                    color={TARGET_META[t.kind].color}
+                  />
                   <Text
                     style={[styles.targetRowLabel, t.done && styles.targetRowDone]}
                     numberOfLines={1}
                   >
                     {targetLabel(t)}
                   </Text>
-                  <Text style={styles.targetRowDist}>
-                    {t.done
-                      ? "✓"
-                      : userLocation
+                  {t.done ? (
+                    <Ionicons name="checkmark" size={13} color="rgba(255,255,255,0.55)" />
+                  ) : (
+                    <Text style={styles.targetRowDist}>
+                      {userLocation
                         ? `${distanceKm(userLocation, t.lat, t.lng).toFixed(1)} km`
                         : ""}
-                  </Text>
+                    </Text>
+                  )}
                 </Pressable>
               ))}
             </View>
@@ -691,8 +718,6 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 1 },
     elevation: 4,
   },
-  targetDotIcon: { fontSize: 14, color: "#FFFFFF" },
-
   targetsWrap: { position: "absolute", left: 12 },
 
   hintWrap: { position: "absolute", left: 12, right: 12, alignItems: "center" },
@@ -758,7 +783,6 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
     gap: 6,
   },
-  targetRowIcon: { fontSize: 13 },
   targetRowLabel: { flex: 1, color: "rgba(255,255,255,0.9)", fontSize: 12 },
   targetRowDone: { opacity: 0.5, textDecorationLine: "line-through" },
   targetRowDist: { color: "rgba(255,255,255,0.55)", fontSize: 11, fontWeight: "600" },

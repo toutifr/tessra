@@ -25,6 +25,7 @@ import { sectorLabel } from "../src/lib/sector";
 import ConquestOverlay from "../src/components/ConquestOverlay";
 import LinkAccountSheet, { useIsGuest } from "../src/components/LinkAccountSheet";
 import PressableScale from "../src/components/PressableScale";
+import IconLabel from "../src/components/IconLabel";
 import { useThemeColors, fonts, spacing, radii, shadows } from "../src/theme";
 
 // Une seule invite de liaison de compte par lancement d'app.
@@ -429,10 +430,18 @@ export default function UploadScreen() {
             <View style={styles.priceSection}>
               <Text style={[styles.priceLabel, { color: c.textSecondary }]}>
                 Minimum price: {effectiveMin} ⬡ ({tesselsToEur(effectiveMin)})
-                {rushActive ? " · 🔥 Rush Hour −50%" : ""}
+                {rushActive ? " · Rush Hour −50%" : ""}
               </Text>
               {onSiteRaid && (
-                <Text style={styles.raidNote}>⚔️ On-site raid: −30% applied</Text>
+                <IconLabel
+                  icon="flag"
+                  label="On-site raid: −30% applied"
+                  color="#34C759"
+                  size={14}
+                  gap={4}
+                  textStyle={styles.raidNote}
+                  style={styles.raidNoteRow}
+                />
               )}
               <TextInput
                 style={[
@@ -504,7 +513,13 @@ export default function UploadScreen() {
             ]}
             onPress={() => pickImage(true)}
           >
-            <Text style={[styles.choiceText, { color: c.primaryText }]}>📷 Take a photo</Text>
+            <IconLabel
+              icon="camera-outline"
+              label="Take a photo"
+              color={c.primaryText}
+              size={17}
+              textStyle={styles.choiceText}
+            />
           </PressableScale>
 
           <PressableScale
@@ -515,7 +530,13 @@ export default function UploadScreen() {
             ]}
             onPress={() => pickImage(false)}
           >
-            <Text style={[styles.choiceText, { color: c.text }]}>🖼 Choose from gallery</Text>
+            <IconLabel
+              icon="images-outline"
+              label="Choose from gallery"
+              color={c.text}
+              size={17}
+              textStyle={styles.choiceText}
+            />
           </PressableScale>
         </View>
       )}
@@ -602,12 +623,10 @@ const styles = StyleSheet.create({
   priceSection: { marginBottom: spacing.base, width: "100%" },
   priceLabel: { fontSize: fonts.sizes.sm, marginBottom: spacing.sm, textAlign: "center" },
   raidNote: {
-    color: "#34C759",
     fontSize: fonts.sizes.sm,
     fontWeight: fonts.weights.semibold,
-    textAlign: "center",
-    marginBottom: spacing.sm,
   },
+  raidNoteRow: { marginBottom: spacing.sm },
   priceInput: {
     borderWidth: 1,
     borderRadius: radii.md,

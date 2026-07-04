@@ -62,7 +62,16 @@ const LEADERBOARD_KINDS: { kind: LeaderboardKind; label: string }[] = [
   { kind: "explorer", label: "Explorer" },
 ];
 
-const TEAM_EMOJIS = ["⬡", "🔥", "🌍", "🚀", "🦅", "🐺", "🌊", "⚡"];
+// Identités d'équipe : "⬡" (glyphe monnaie, pas un emoji) + noms d'Ionicons.
+// Les valeurs legacy en DB (emojis) sont rendues telles quelles par TeamGlyph.
+const TEAM_GLYPHS = ["⬡", "flame", "earth", "rocket", "flash", "shield", "paw", "star"];
+
+function TeamGlyph({ value, size, color }: { value: string; size: number; color: string }) {
+  if (value in Ionicons.glyphMap) {
+    return <Ionicons name={value as keyof typeof Ionicons.glyphMap} size={size} color={color} />;
+  }
+  return <Text style={{ fontSize: size, color }}>{value}</Text>;
+}
 
 function remainingLabel(iso: string): string {
   const diff = new Date(iso).getTime() - Date.now();
@@ -123,7 +132,8 @@ const FeedCard = memo(function FeedCard({
         </View>
         {item.is_shielded && (
           <View style={[styles.shieldBadge, { backgroundColor: `${palette.warning}20` }]}>
-            <Text style={[styles.shieldBadgeText, { color: palette.warning }]}>🛡️ Protected</Text>
+            <Ionicons name="shield" size={11} color={palette.warning} />
+            <Text style={[styles.shieldBadgeText, { color: palette.warning }]}>Protected</Text>
           </View>
         )}
       </View>
@@ -153,7 +163,11 @@ const FeedCard = memo(function FeedCard({
           onPress={() => onVote(item)}
           disabled={!canVote}
         >
-          <Text style={styles.voteIcon}>{item.has_voted ? "❤️" : "🤍"}</Text>
+          <Ionicons
+            name={item.has_voted ? "heart" : "heart-outline"}
+            size={16}
+            color={item.has_voted ? c.primary : c.textSecondary}
+          />
           <Text style={[styles.voteCount, { color: item.has_voted ? c.primary : c.textSecondary }]}>
             {item.vote_count}
           </Text>
@@ -253,7 +267,7 @@ export default function DiscoverScreen() {
   const isGuest = useIsGuest();
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [teamName, setTeamName] = useState("");
-  const [teamEmoji, setTeamEmoji] = useState(TEAM_EMOJIS[0]);
+  const [teamEmoji, setTeamEmoji] = useState(TEAM_GLYPHS[0]);
 
   useEffect(() => {
     track("feed_open");
@@ -466,9 +480,13 @@ export default function DiscoverScreen() {
                     Claim +{q.reward} ⬡
                   </Text>
                 </PressableScale>
+              ) : q.claimed ? (
+                <View style={styles.questCheck}>
+                  <Ionicons name="checkmark-circle" size={18} color={c.success} />
+                </View>
               ) : (
-                <Text style={[styles.questProgress, { color: q.claimed ? c.success : c.textTertiary }]}>
-                  {q.claimed ? "✓" : `${q.progress}/${q.target}`}
+                <Text style={[styles.questProgress, { color: c.textTertiary }]}>
+                  {`${q.progress}/${q.target}`}
                 </Text>
               )}
             </View>
@@ -657,7 +675,7 @@ export default function DiscoverScreen() {
                 <Text style={[styles.lbRank, { color: t.rank <= 3 ? palette.gold : c.textSecondary }]}>
                   {t.rank}
                 </Text>
-                <Text style={styles.teamRowEmoji}>{t.emoji}</Text>
+                <TeamGlyph value={t.emoji} size={22} color={c.text} />
                 <Text
                   style={[
                     styles.teamRowName,
@@ -668,7 +686,10 @@ export default function DiscoverScreen() {
                   {t.name}
                   {isMine ? " (your team)" : ""}
                 </Text>
-                <Text style={[styles.teamRowMembers, { color: c.textTertiary }]}>{t.member_count} 👤</Text>
+                <View style={styles.teamRowMembersWrap}>
+                  <Text style={[styles.teamRowMembers, { color: c.textTertiary }]}>{t.member_count}</Text>
+                  <Ionicons name="person" size={12} color={c.textTertiary} />
+                </View>
                 <Text style={[styles.lbValue, { color: c.primary }]}>{t.score}</Text>
               </View>
             );
@@ -705,7 +726,7 @@ export default function DiscoverScreen() {
                 autoFocus
               />
               <View style={styles.emojiRow}>
-                {TEAM_EMOJIS.map((e) => (
+                {TEAM_GLYPHS.map((e) => (
                   <Pressable
                     key={e}
                     style={[
@@ -714,7 +735,7 @@ export default function DiscoverScreen() {
                     ]}
                     onPress={() => setTeamEmoji(e)}
                   >
-                    <Text style={styles.emojiChoiceText}>{e}</Text>
+                    <TeamGlyph value={e} size={20} color={teamEmoji === e ? c.primaryText : c.text} />
                   </Pressable>
                 ))}
               </View>
@@ -758,11 +779,14 @@ export default function DiscoverScreen() {
           )}
           {teams.map((t) => (
             <View key={t.id} style={[styles.teamRow, { borderBottomColor: c.separator }]}>
-              <Text style={styles.teamRowEmoji}>{t.emoji}</Text>
+              <TeamGlyph value={t.emoji} size={22} color={c.text} />
               <Text style={[styles.teamRowName, { color: c.text }]} numberOfLines={1}>
                 {t.name}
               </Text>
-              <Text style={[styles.teamRowMembers, { color: c.textTertiary }]}>{t.member_count} 👤</Text>
+              <View style={styles.teamRowMembersWrap}>
+                <Text style={[styles.teamRowMembers, { color: c.textTertiary }]}>{t.member_count}</Text>
+                <Ionicons name="person" size={12} color={c.textTertiary} />
+              </View>
               <PressableScale
                 style={[
                   styles.joinButton,
@@ -890,6 +914,7 @@ const styles = StyleSheet.create({
   progressTrack: { height: 6, borderRadius: 3, overflow: "hidden" },
   progressFill: { height: 6, borderRadius: 3 },
   questProgress: { fontSize: fonts.sizes.sm, fontWeight: fonts.weights.semibold, minWidth: 40, textAlign: "right" },
+  questCheck: { minWidth: 40, alignItems: "flex-end" },
   claimButton: {
     borderRadius: radii.full,
     paddingHorizontal: spacing.md,
@@ -912,6 +937,9 @@ const styles = StyleSheet.create({
   cardUsername: { fontSize: fonts.sizes.sm, fontWeight: fonts.weights.semibold },
   cardTime: { fontSize: fonts.sizes.xs, marginTop: 1 },
   shieldBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
     borderRadius: radii.full,
     paddingHorizontal: spacing.sm,
     paddingVertical: 3,
@@ -933,7 +961,6 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
     borderRadius: radii.full,
   },
-  voteIcon: { fontSize: 16 },
   voteCount: { fontSize: fonts.sizes.sm, fontWeight: fonts.weights.semibold },
   takeButton: {
     borderRadius: radii.full,
@@ -1003,7 +1030,6 @@ const styles = StyleSheet.create({
     width: 40, height: 40, borderRadius: radii.sm,
     justifyContent: "center", alignItems: "center",
   },
-  emojiChoiceText: { fontSize: 20 },
   createActions: { flexDirection: "row", justifyContent: "flex-end", gap: spacing.sm },
   createCancel: {
     borderWidth: 1, borderRadius: radii.sm,
@@ -1022,8 +1048,8 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md, paddingHorizontal: spacing.sm,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  teamRowEmoji: { fontSize: 22 },
   teamRowName: { flex: 1, fontSize: fonts.sizes.base, fontWeight: fonts.weights.medium },
+  teamRowMembersWrap: { flexDirection: "row", alignItems: "center", gap: 3 },
   teamRowMembers: { fontSize: fonts.sizes.sm },
   joinButton: {
     borderRadius: radii.full,

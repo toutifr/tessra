@@ -22,6 +22,7 @@ import { useUserStats } from "../../src/hooks/useUserStats";
 import AnimatedNumber from "../../src/components/AnimatedNumber";
 import LinkAccountSheet, { useIsGuest } from "../../src/components/LinkAccountSheet";
 import PressableScale from "../../src/components/PressableScale";
+import IconLabel from "../../src/components/IconLabel";
 import Skeleton from "../../src/components/Skeleton";
 import { useThemeColors, fonts, spacing, radii, shadows, palette, ThemeColors } from "../../src/theme";
 
@@ -361,7 +362,14 @@ export default function ProfileScreen() {
         </View>
         {stats.streak_days >= 2 && (
           <View style={[styles.streakBadge, { backgroundColor: palette.warning }]}>
-            <Text style={styles.streakText}>🔥 {stats.streak_days}d</Text>
+            <IconLabel
+              icon="flame"
+              label={`${stats.streak_days}d`}
+              color="#fff"
+              size={14}
+              gap={4}
+              textStyle={styles.streakText}
+            />
           </View>
         )}
       </View>
@@ -397,7 +405,13 @@ export default function ProfileScreen() {
       {/* How to play */}
       <View style={[styles.privacyCard, { backgroundColor: c.card, borderColor: c.cardBorder, marginBottom: spacing.xl }, shadows.sm]}>
         <PressableScale style={styles.privacyRow} onPress={() => router.push("/how-to-play")}>
-          <Text style={[styles.privacyRowText, { color: c.text }]}>📖 How to play</Text>
+          <IconLabel
+            icon="book-outline"
+            label="How to play"
+            color={c.text}
+            size={16}
+            textStyle={styles.privacyRowText}
+          />
           <Text style={[styles.privacyChevron, { color: c.textTertiary }]}>›</Text>
         </PressableScale>
       </View>

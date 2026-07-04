@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { StyleSheet, Text, View, ViewStyle } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 import { getGameState, GameState } from "../lib/economy";
 import { useSWR } from "../lib/swr";
 import { useThemeColors, fonts, spacing, radii, shadows } from "../theme";
@@ -65,8 +66,9 @@ export default function RushBanner({
       const ss = Math.floor((remaining % 60000) / 1000);
       return (
         <View style={[styles.banner, styles.pulse, shadows.md, style]}>
+          <Ionicons name="flash" size={13} color="#fff" />
           <Text style={styles.activeText} numberOfLines={1}>
-            ⚡ Pulse — x3 rewards · ends in {pad(mm)}:{pad(ss)}
+            Pulse — x3 rewards · ends in {pad(mm)}:{pad(ss)}
           </Text>
         </View>
       );
@@ -80,8 +82,9 @@ export default function RushBanner({
     const ss = Math.floor((remaining % 60000) / 1000);
     return (
       <View style={[styles.banner, styles.active, shadows.md, style]}>
+        <Ionicons name="flame" size={13} color="#fff" />
         <Text style={styles.activeText} numberOfLines={1}>
-          🔥 Rush Hour — −50% on every takeover · ends in {pad(mm)}:{pad(ss)}
+          Rush Hour — −50% on every takeover · ends in {pad(mm)}:{pad(ss)}
         </Text>
       </View>
     );
@@ -100,8 +103,9 @@ export default function RushBanner({
           style,
         ]}
       >
+        <Ionicons name="flame-outline" size={13} color={c.textSecondary} />
         <Text style={[styles.soonText, { color: c.textSecondary }]} numberOfLines={1}>
-          🔥 Rush Hour in {pad(hh)}:{pad(mm)}
+          Rush Hour in {pad(hh)}:{pad(mm)}
         </Text>
       </View>
     );
@@ -112,10 +116,13 @@ export default function RushBanner({
 
 const styles = StyleSheet.create({
   banner: {
+    flexDirection: "row",
     borderRadius: radii.md,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
     alignItems: "center",
+    justifyContent: "center",
+    gap: 5,
   },
   active: { backgroundColor: RUSH_COLOR },
   pulse: { backgroundColor: PULSE_COLOR, borderWidth: 1, borderColor: "#818CF8" },

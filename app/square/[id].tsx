@@ -8,12 +8,14 @@ import {
   View,
 } from "react-native";
 import { useLocalSearchParams, router } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import * as Location from "expo-location";
 import { supabase, getCachedUser } from "../../src/lib/supabase";
 import { Square, SquareStatus, STATUS_COLORS, Shield } from "../../src/types/square";
 import { Publication } from "../../src/types/square";
 import ReportButton from "../../src/components/ReportButton";
+import IconLabel from "../../src/components/IconLabel";
 import PressableScale from "../../src/components/PressableScale";
 import { DetailSkeleton } from "../../src/components/Skeleton";
 import { useVote } from "../../src/hooks/useVote";
@@ -28,11 +30,13 @@ import { sectorLabel } from "../../src/lib/sector";
 import { useThemeColors, fonts, spacing, radii, shadows, palette } from "../../src/theme";
 
 /** Fraîcheur d'une case d'après sa dernière activité */
-function freshnessLabel(lastActivityAt: string): string {
+type Freshness = { icon: keyof typeof Ionicons.glyphMap; label: string };
+const FRESH_ALIVE: Freshness = { icon: "flame", label: "Alive" };
+function freshness(lastActivityAt: string): Freshness {
   const days = (Date.now() - new Date(lastActivityAt).getTime()) / 86_400_000;
-  if (days < 3) return "🔥 Alive";
-  if (days <= 7) return "🕯 Fading";
-  return "❄️ Cold";
+  if (days < 3) return FRESH_ALIVE;
+  if (days <= 7) return { icon: "flame-outline", label: "Fading" };
+  return { icon: "snow", label: "Cold" };
 }
 
 const STATUS_LABELS: Record<SquareStatus, string> = {
@@ -295,14 +299,22 @@ export default function SquareDetailScreen() {
           )}
           {publication.is_pulse && (
             <View style={styles.pulseBadge}>
-              <Text style={styles.pulseBadgeText}>⚡</Text>
+              <Ionicons name="flash" size={14} color="#FFFFFF" />
             </View>
           )}
           {activeShield && (
             <View style={styles.shieldPhotoBadge}>
-              <Text style={styles.pulseBadgeText}>
-                {activeShield.tier === "gold" ? "🥇" : activeShield.tier === "silver" ? "🥈" : "🥉"}
-              </Text>
+              <Ionicons
+                name="shield"
+                size={14}
+                color={
+                  activeShield.tier === "gold"
+                    ? palette.gold
+                    : activeShield.tier === "silver"
+                      ? palette.silver
+                      : palette.bronze
+                }
+              />
             </View>
           )}
         </View>
@@ -324,7 +336,11 @@ export default function SquareDetailScreen() {
             onPress={handleVote}
             disabled={voting || hasVoted}
           >
-            <Text style={styles.interactionIcon}>{hasVoted ? "❤️" : "🤍"}</Text>
+            <Ionicons
+              name={hasVoted ? "heart" : "heart-outline"}
+              size={18}
+              color={hasVoted ? c.primary : c.textSecondary}
+            />
             <Text style={[styles.interactionLabel, { color: hasVoted ? c.primary : c.textSecondary }]}>
               {voteCount}
             </Text>
@@ -367,11 +383,19 @@ export default function SquareDetailScreen() {
             {STATUS_LABELS[square.status]}
           </Text>
         </View>
-        {square.status === "occupe" && (
-          <Text style={[styles.freshnessLine, { color: c.textSecondary }]}>
-            {justRevived ? "🔥 Alive" : freshnessLabel(square.last_activity_at)}
-          </Text>
-        )}
+        {square.status === "occupe" && (() => {
+          const f = justRevived ? FRESH_ALIVE : freshness(square.last_activity_at);
+          return (
+            <IconLabel
+              icon={f.icon}
+              label={f.label}
+              color={c.textSecondary}
+              size={14}
+              gap={4}
+              textStyle={styles.freshnessLine}
+            />
+          );
+        })()}
       </View>
 
       {/* 3. UN SEUL CTA principal, selon qui regarde */}
@@ -388,9 +412,13 @@ export default function SquareDetailScreen() {
                 onPress={handleRevive}
                 disabled={reviving}
               >
-                <Text style={[styles.actionText, { color: "#FFFFFF" }]}>
-                  {reviving ? "Reviving…" : "🔥 Revive"}
-                </Text>
+                <IconLabel
+                  icon="flame"
+                  label={reviving ? "Reviving…" : "Revive"}
+                  color="#FFFFFF"
+                  size={16}
+                  textStyle={styles.actionText}
+                />
               </PressableScale>
               <Text style={[styles.ctaNote, { color: c.textTertiary }]}>
                 Be here in person to reset freshness (+5 ⬡)
@@ -398,9 +426,13 @@ export default function SquareDetailScreen() {
             </>
           ) : (
             <View style={[styles.actionButton, styles.revivedState, { backgroundColor: c.bgTertiary }]}>
-              <Text style={[styles.actionText, { color: c.textSecondary }]}>
-                Revived ✓ — your tile is alive
-              </Text>
+              <IconLabel
+                icon="checkmark-circle"
+                label="Revived — your tile is alive"
+                color={c.textSecondary}
+                size={16}
+                textStyle={styles.actionText}
+              />
             </View>
           )}
         </View>
@@ -410,9 +442,13 @@ export default function SquareDetailScreen() {
             style={[styles.actionButton, { backgroundColor: c.primary }, shadows.md]}
             onPress={handleAction}
           >
-            <Text style={[styles.actionText, { color: c.primaryText }]}>
-              📸 Claim this tile — Free
-            </Text>
+            <IconLabel
+              icon="camera"
+              label="Claim this tile — Free"
+              color={c.primaryText}
+              size={16}
+              textStyle={styles.actionText}
+            />
           </PressableScale>
           <Text style={[styles.ctaNote, { color: c.textTertiary }]}>
             You must be physically here
@@ -429,12 +465,19 @@ export default function SquareDetailScreen() {
             onPress={handleAction}
             disabled={!!activeShield}
           >
-            <Text style={[
-              styles.actionText,
-              { color: activeShield ? c.textTertiary : c.primaryText },
-            ]}>
-              {activeShield ? "🛡 Tile protected" : `Take over — ${minPrice} ⬡`}
-            </Text>
+            {activeShield ? (
+              <IconLabel
+                icon="shield"
+                label="Tile protected"
+                color={c.textTertiary}
+                size={16}
+                textStyle={styles.actionText}
+              />
+            ) : (
+              <Text style={[styles.actionText, { color: c.primaryText }]}>
+                {`Take over — ${minPrice} ⬡`}
+              </Text>
+            )}
           </PressableScale>
           {activeShield ? (
             <Text style={[styles.ctaNote, { color: c.textTertiary }]}>
@@ -452,7 +495,8 @@ export default function SquareDetailScreen() {
                     {getBasePrice(square)} ⬡
                   </Text>
                   <View style={styles.rushBadge}>
-                    <Text style={styles.rushBadgeText}>🔥 Rush Hour −50%</Text>
+                    <Ionicons name="flame" size={11} color="#fff" />
+                    <Text style={styles.rushBadgeText}>Rush Hour −50%</Text>
                   </View>
                 </View>
               )}
@@ -469,7 +513,7 @@ export default function SquareDetailScreen() {
           {/* 🛡 Shield */}
           {activeShield ? (
             <View style={[styles.defendRow, { backgroundColor: c.card, borderColor: c.cardBorder }, shadows.sm]}>
-              <Text style={styles.defendIcon}>🛡</Text>
+              <Ionicons name="shield" size={18} color={c.text} style={styles.defendIcon} />
               <View style={styles.shieldInfo}>
                 <Text style={[styles.shieldOptionTitle, { color: c.text }]}>
                   Shield active ({activeShield.tier === "gold" ? "Gold" : activeShield.tier === "silver" ? "Silver" : "Bronze"})
@@ -489,16 +533,18 @@ export default function SquareDetailScreen() {
                 ]}
                 onPress={() => { hapticLight(); setShieldOpen((v) => !v); }}
               >
-                <Text style={styles.defendIcon}>🛡</Text>
+                <Ionicons name="shield-outline" size={18} color={c.text} style={styles.defendIcon} />
                 <View style={styles.shieldInfo}>
                   <Text style={[styles.shieldOptionTitle, { color: c.text }]}>Shield</Text>
                   <Text style={[styles.shieldOptionDesc, { color: c.textTertiary }]}>
                     Block takeovers for a few hours
                   </Text>
                 </View>
-                <Text style={[styles.defendChevron, { color: c.textTertiary }]}>
-                  {shieldOpen ? "▴" : "▾"}
-                </Text>
+                <Ionicons
+                  name={shieldOpen ? "chevron-up" : "chevron-down"}
+                  size={16}
+                  color={c.textTertiary}
+                />
               </Pressable>
               {shieldOpen && (
                 <View style={[styles.shieldOptions, { marginTop: spacing.sm, marginBottom: spacing.sm }]}>
@@ -540,16 +586,18 @@ export default function SquareDetailScreen() {
                 ]}
                 onPress={() => { hapticLight(); setFortifyOpen((v) => !v); }}
               >
-                <Text style={styles.defendIcon}>💪</Text>
+                <Ionicons name="trending-up" size={18} color={c.text} style={styles.defendIcon} />
                 <View style={styles.shieldInfo}>
                   <Text style={[styles.shieldOptionTitle, { color: c.text }]}>Fortify</Text>
                   <Text style={[styles.shieldOptionDesc, { color: c.textTertiary }]}>
                     Raise the takeover price — now {square.last_price} ⬡, attackers pay ≥ {minTakePrice(square.last_price)} ⬡
                   </Text>
                 </View>
-                <Text style={[styles.defendChevron, { color: c.textTertiary }]}>
-                  {fortifyOpen ? "▴" : "▾"}
-                </Text>
+                <Ionicons
+                  name={fortifyOpen ? "chevron-up" : "chevron-down"}
+                  size={16}
+                  color={c.textTertiary}
+                />
               </Pressable>
               {fortifyOpen && (
                 <View style={[styles.shieldOptions, { marginTop: spacing.sm }]}>
@@ -652,7 +700,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#818CF8",
   },
-  pulseBadgeText: { fontSize: 14 },
   shieldPhotoBadge: {
     position: "absolute",
     top: spacing.sm,
@@ -684,12 +731,10 @@ const styles = StyleSheet.create({
     borderRadius: radii.md,
     borderWidth: 1,
   },
-  defendIcon: { fontSize: 18, marginRight: spacing.md },
-  defendChevron: { fontSize: fonts.sizes.md, fontWeight: fonts.weights.semibold },
+  defendIcon: { marginRight: spacing.md },
   freshnessLine: {
     fontSize: fonts.sizes.sm,
     fontWeight: fonts.weights.semibold,
-    marginBottom: spacing.sm,
   },
   reviveButton: {
     borderRadius: radii.full,
@@ -719,7 +764,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md, paddingVertical: spacing.xs + 2,
     borderRadius: radii.full,
   },
-  shieldEmoji: { fontSize: 14, marginRight: spacing.xs },
   shieldText: { fontSize: fonts.sizes.sm, fontWeight: fonts.weights.semibold },
 
   interactionRow: {
@@ -731,7 +775,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.base, paddingVertical: spacing.sm,
     borderRadius: radii.full,
   },
-  interactionIcon: { fontSize: 18 },
   interactionLabel: { fontSize: fonts.sizes.sm, fontWeight: fonts.weights.semibold },
   followChip: {
     paddingHorizontal: spacing.base, paddingVertical: spacing.sm,
@@ -756,6 +799,9 @@ const styles = StyleSheet.create({
     textDecorationLine: "line-through",
   },
   rushBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
     backgroundColor: "#FF6B35",
     borderRadius: radii.full,
     paddingHorizontal: spacing.sm,
