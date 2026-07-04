@@ -102,6 +102,53 @@ export interface TeamChallenge {
 
 // ─── Helpers ──────────────────────────────────────────────
 
+/**
+ * Traduit une erreur serveur brute en message clair pour l'utilisateur.
+ * Le détail technique doit rester en console (console.error côté appelant).
+ */
+export function friendlyGameError(
+  raw: unknown,
+  context: "claim" | "take" | "revive" | "fortify" | "shield" = "claim",
+): string {
+  const msg =
+    raw instanceof Error
+      ? raw.message
+      : typeof raw === "object" && raw !== null && "message" in raw
+        ? String((raw as { message: unknown }).message)
+        : String(raw ?? "");
+
+  if (/GPS|inside the cell|physical location/i.test(msg)) {
+    return "You need to be inside this tile — get closer and try again.";
+  }
+  if (/cooldown/i.test(msg)) {
+    return "This tile was just updated — try again in a few minutes.";
+  }
+  if (/rate limit/i.test(msg)) {
+    return context === "claim"
+      ? "You've reached today's 5 free claims. Back tomorrow!"
+      : "You've hit today's action limit. Back tomorrow!";
+  }
+  if (/shield/i.test(msg)) {
+    return "This tile is protected by a shield right now.";
+  }
+  if (/price too low/i.test(msg)) {
+    return "The minimum price has changed. Please try again.";
+  }
+  if (/not available|not occupied|not found/i.test(msg)) {
+    return "This tile just changed. Close and reopen it, then try again.";
+  }
+  switch (context) {
+    case "revive":
+      return "Could not revive this tile. Please try again.";
+    case "fortify":
+      return "Could not fortify this tile. Please try again.";
+    case "shield":
+      return "Could not activate the shield. Please try again.";
+    default:
+      return "Something went wrong. Please try again.";
+  }
+}
+
 export async function getGameState(lat?: number, lng?: number): Promise<GameState> {
   const { data, error } = await supabase.rpc(
     "get_game_state",

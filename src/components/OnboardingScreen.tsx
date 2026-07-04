@@ -32,7 +32,7 @@ const pages: OnboardingPage[] = [
   {
     icon: "location-outline",
     title: "Be there, own it",
-    description: "Standing in a tile? Publish your photo for free. You have to actually be there.",
+    description: "Standing in a tile? Claim it with a photo — free. You have to actually be there.",
   },
   {
     icon: "shield-half-outline",

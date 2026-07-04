@@ -76,7 +76,8 @@ export default function PaywallScreen() {
       const msg = e instanceof Error ? e.message : "Purchase failed";
       // Annulation utilisateur : silencieux
       if (!/cancel|annul/i.test(msg)) {
-        Alert.alert("Error", msg);
+        console.error("purchase failed:", msg);
+        Alert.alert("Purchase failed", "The payment didn't go through. You were not charged — please try again.");
       }
     } finally {
       setBuying(null);

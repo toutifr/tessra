@@ -16,7 +16,7 @@ import * as Location from "expo-location";
 import { supabase, getCachedUser } from "../src/lib/supabase";
 import { cellAt, cellFromId, GridCell } from "../src/lib/kmGrid";
 import { emitOptimisticUpload } from "../src/lib/tileEvents";
-import { getGameState, GameState, takeSquare, InsufficientTesselsError } from "../src/lib/economy";
+import { friendlyGameError, getGameState, GameState, takeSquare, InsufficientTesselsError } from "../src/lib/economy";
 import { useSWR, invalidate } from "../src/lib/swr";
 import { rushPrice, tesselsToEur } from "../src/constants/iap";
 import { track } from "../src/lib/track";
@@ -103,9 +103,9 @@ export default function UploadScreen() {
     })();
   }, [isTake]);
 
-  // Cellule de la case visée (pour le check "sur place" côté client)
+  // Cellule de la case visée — check "sur place" côté client + label secteur
   useEffect(() => {
-    if (!isTake || !squareId) return;
+    if (!squareId) return;
     (async () => {
       const { data } = await supabase
         .from("squares")
@@ -117,7 +117,10 @@ export default function UploadScreen() {
         (data.cell_id ? cellFromId(data.cell_id) : null) ?? cellAt(data.lat, data.lng);
       setTakeCell(cell);
     })();
-  }, [isTake, squareId]);
+  }, [squareId]);
+
+  // Secteur affiché sous le titre — connu direct en claim (cellId), fetché en take
+  const sectorCellId = cellId ?? takeCell?.id ?? null;
 
   // Sur place = dans les bornes de la cellule visée → −30% (appliqué serveur)
   const onSiteRaid =
@@ -223,8 +226,8 @@ export default function UploadScreen() {
 
       setImageUri(rawUri);
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : JSON.stringify(e);
-      Alert.alert("Image error", msg);
+      console.error("image pick failed:", e instanceof Error ? e.message : JSON.stringify(e));
+      Alert.alert("Image error", "Could not load that image. Please try another one.");
     }
   };
 
@@ -365,6 +368,8 @@ export default function UploadScreen() {
             ? String((e as { message: unknown }).message)
             : JSON.stringify(e);
 
+      // Détail technique en console uniquement — message clair pour l'utilisateur
+      console.error("upload failed:", message);
       if (typeof message === "string" && message.includes("Price too low")) {
         Alert.alert(
           "Price updated",
@@ -372,7 +377,10 @@ export default function UploadScreen() {
           [{ text: "OK" }],
         );
       } else {
-        Alert.alert("Error", message);
+        Alert.alert(
+          isTake ? "Takeover failed" : "Claim failed",
+          friendlyGameError(message, isTake ? "take" : "claim"),
+        );
       }
     } finally {
       setUploading(false);
@@ -392,7 +400,7 @@ export default function UploadScreen() {
           ) : (
             <>
               <Text style={[styles.locationText, { color: c.textSecondary }]}>
-                Piri needs your location: you must be inside the tile to publish
+                Piri needs your location: you must be inside the tile to claim it
               </Text>
               <Pressable
                 style={({ pressed }) => [
@@ -471,7 +479,7 @@ export default function UploadScreen() {
                 <ActivityIndicator color={c.primaryText} />
               ) : (
                 <Text style={[styles.primaryText, { color: c.primaryText }]}>
-                  {isTake ? `Take over — ${priceInput} ⬡` : "Publish"}
+                  {isTake ? `Take over — ${priceInput} ⬡` : "Claim — Free"}
                 </Text>
               )}
             </PressableScale>
@@ -480,11 +488,11 @@ export default function UploadScreen() {
       ) : (
         <View style={styles.choices}>
           <Text style={[styles.title, { color: c.text }]}>
-            {isTake ? "Take over this tile" : "Drop your photo"}
+            {isTake ? `Take over — ${effectiveMin} ⬡` : "Claim this tile"}
           </Text>
-          {cellId ? (
+          {sectorCellId ? (
             <Text style={[styles.sectorText, { color: c.textTertiary }]}>
-              {sectorLabel(cellId)}
+              {sectorLabel(sectorCellId)}
             </Text>
           ) : null}
 
@@ -496,7 +504,7 @@ export default function UploadScreen() {
             ]}
             onPress={() => pickImage(true)}
           >
-            <Text style={[styles.choiceText, { color: c.primaryText }]}>Take a photo</Text>
+            <Text style={[styles.choiceText, { color: c.primaryText }]}>📷 Take a photo</Text>
           </PressableScale>
 
           <PressableScale
@@ -507,7 +515,7 @@ export default function UploadScreen() {
             ]}
             onPress={() => pickImage(false)}
           >
-            <Text style={[styles.choiceText, { color: c.text }]}>Choose from gallery</Text>
+            <Text style={[styles.choiceText, { color: c.text }]}>🖼 Choose from gallery</Text>
           </PressableScale>
         </View>
       )}

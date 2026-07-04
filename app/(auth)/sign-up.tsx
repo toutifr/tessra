@@ -32,7 +32,13 @@ export default function SignUpScreen() {
     const { error } = await supabase.auth.signUp({ email, password });
     setLoading(false);
     if (error) {
-      Alert.alert("Error", error.message);
+      console.error("sign up failed:", error.message);
+      Alert.alert(
+        "Sign up failed",
+        /already|registered/i.test(error.message)
+          ? "This email is already registered — try signing in instead."
+          : "Could not create your account. Please try again.",
+      );
     } else {
       Alert.alert("Success", "Check your email to confirm your account.", [
         { text: "OK", onPress: () => router.replace("/(auth)/sign-in") },

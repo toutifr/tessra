@@ -103,7 +103,8 @@ export default function ProfileScreen() {
       .eq("user_id", uid);
 
     if (error) {
-      Alert.alert("Error", error.message);
+      console.error("username update failed:", error.message);
+      Alert.alert("Name not saved", "Could not update your username — it may already be taken.");
     } else {
       patchProfile({ username: newUsername.trim() });
       setEditing(false);
@@ -131,7 +132,8 @@ export default function ProfileScreen() {
       .upload(fileName, arrayBuffer, { contentType: "image/jpeg", upsert: true });
 
     if (uploadError) {
-      Alert.alert("Error", uploadError.message);
+      console.error("avatar upload failed:", uploadError.message);
+      Alert.alert("Photo not saved", "Could not upload your photo. Please try again.");
       return;
     }
 
@@ -150,7 +152,8 @@ export default function ProfileScreen() {
   const doSignOut = async () => {
     const { error } = await supabase.auth.signOut();
     if (error) {
-      Alert.alert("Error", error.message);
+      console.error("sign out failed:", error.message);
+      Alert.alert("Sign out failed", "Please try again.");
     } else {
       router.replace("/(auth)/sign-in");
     }
@@ -346,12 +349,16 @@ export default function ProfileScreen() {
           />
           <Text style={[styles.creditsLabel, { color: c.textSecondary }]}>Reis</Text>
         </View>
-        <PressableScale
-          style={[styles.addButton, { backgroundColor: c.primary }]}
-          onPress={() => router.push("/paywall")}
-        >
-          <Text style={[styles.addButtonText, { color: c.primaryText }]}>+</Text>
-        </PressableScale>
+        <View style={styles.addWrap}>
+          <PressableScale
+            style={[styles.addButton, { backgroundColor: c.primary }]}
+            onPress={() => router.push("/paywall")}
+            accessibilityLabel="Top up Reis"
+          >
+            <Text style={[styles.addButtonText, { color: c.primaryText }]}>+</Text>
+          </PressableScale>
+          <Text style={[styles.addLabel, { color: c.textSecondary }]}>Top up</Text>
+        </View>
         {stats.streak_days >= 2 && (
           <View style={[styles.streakBadge, { backgroundColor: palette.warning }]}>
             <Text style={styles.streakText}>🔥 {stats.streak_days}d</Text>
@@ -501,11 +508,13 @@ const styles = StyleSheet.create({
   creditsMain: { alignItems: "center" },
   creditsNumber: { fontSize: 36, fontWeight: fonts.weights.heavy },
   creditsLabel: { fontSize: fonts.sizes.sm },
+  addWrap: { alignItems: "center", gap: 2 },
   addButton: {
     width: 36, height: 36, borderRadius: 18,
     justifyContent: "center", alignItems: "center",
   },
   addButtonText: { fontSize: fonts.sizes.xl, fontWeight: fonts.weights.bold, lineHeight: 26 },
+  addLabel: { fontSize: fonts.sizes.xs, fontWeight: fonts.weights.semibold },
   streakBadge: {
     borderRadius: radii.md, paddingHorizontal: spacing.md, paddingVertical: spacing.xs,
   },

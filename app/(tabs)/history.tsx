@@ -7,12 +7,13 @@ import {
   Text,
   View,
 } from "react-native";
-import { useFocusEffect } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 import { Image } from "expo-image";
 import { supabase } from "../../src/lib/supabase";
 import { useSWR } from "../../src/lib/swr";
 import { useAuth } from "../../src/providers/AuthProvider";
 import { ListSkeleton } from "../../src/components/Skeleton";
+import PressableScale from "../../src/components/PressableScale";
 import { useThemeColors, fonts, spacing, radii, shadows, ThemeColors } from "../../src/theme";
 
 interface HistoryEntry {
@@ -209,7 +210,17 @@ export default function HistoryScreen() {
           }
           ListEmptyComponent={
             <View style={styles.empty}>
-              <Text style={[styles.emptyText, { color: c.textTertiary }]}>No publications yet</Text>
+              <Text style={[styles.emptyText, { color: c.textTertiary }]}>
+                No tiles yet. Go claim your first one on the map 📸
+              </Text>
+              <PressableScale
+                style={[styles.emptyButton, { backgroundColor: c.primary }, shadows.md]}
+                onPress={() => router.push("/(tabs)")}
+              >
+                <Text style={[styles.emptyButtonText, { color: c.primaryText }]}>
+                  Open the map
+                </Text>
+              </PressableScale>
             </View>
           }
         />
@@ -241,8 +252,17 @@ const styles = StyleSheet.create({
   },
   filterText: { fontSize: fonts.sizes.sm, fontWeight: fonts.weights.medium },
   list: { paddingHorizontal: spacing.base, paddingBottom: spacing.xxl },
-  empty: { flex: 1, alignItems: "center", justifyContent: "center", paddingTop: 60 },
-  emptyText: { fontSize: fonts.sizes.base },
+  empty: {
+    flex: 1, alignItems: "center", justifyContent: "center",
+    paddingTop: 60, gap: spacing.lg, paddingHorizontal: spacing.xl,
+  },
+  emptyText: { fontSize: fonts.sizes.base, textAlign: "center" },
+  emptyButton: {
+    borderRadius: radii.full,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.xl,
+  },
+  emptyButtonText: { fontSize: fonts.sizes.base, fontWeight: fonts.weights.semibold },
   card: {
     flexDirection: "row",
     padding: spacing.md,

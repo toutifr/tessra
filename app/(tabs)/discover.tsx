@@ -367,7 +367,14 @@ export default function DiscoverScreen() {
       setTeamName("");
       await refreshTeam();
     } catch (e) {
-      Alert.alert("Error", e instanceof Error ? e.message : "Could not create the team");
+      console.error("create team failed:", e);
+      const msg = e instanceof Error ? e.message : "";
+      Alert.alert(
+        "Team not created",
+        /duplicate|unique|exists/i.test(msg)
+          ? "That name is already taken — try another one."
+          : "Could not create the team. Please try again.",
+      );
     } finally {
       setTeamBusy(false);
     }
@@ -388,8 +395,10 @@ export default function DiscoverScreen() {
     } catch (e) {
       const msg = e instanceof Error ? e.message : "";
       Alert.alert(
-        "Error",
-        msg.includes("Already in a team") ? "You're already in a team." : "Could not join the team",
+        "Could not join",
+        msg.includes("Already in a team")
+          ? "You're already in a team. Leave it first to switch."
+          : "Could not join the team. Please try again.",
       );
     } finally {
       setTeamBusy(false);
@@ -519,9 +528,19 @@ export default function DiscoverScreen() {
               </View>
             }
             ListEmptyComponent={
-              <Text style={[styles.emptyText, { color: c.textTertiary }]}>
-                Nothing to discover yet. Come back later!
-              </Text>
+              <View style={styles.emptyWrap}>
+                <Text style={[styles.emptyText, { color: c.textTertiary }]}>
+                  The mosaic is empty around here. Be the first — claim a tile on the map!
+                </Text>
+                <PressableScale
+                  style={[styles.emptyButton, { backgroundColor: c.primary }, shadows.md]}
+                  onPress={() => router.push("/(tabs)")}
+                >
+                  <Text style={[styles.emptyButtonText, { color: c.primaryText }]}>
+                    Open the map
+                  </Text>
+                </PressableScale>
+              </View>
             }
             ListFooterComponent={
               loadingMore ? <ActivityIndicator style={{ margin: spacing.lg }} color={c.primary} /> : null
@@ -818,12 +837,18 @@ const LeaderboardLine = memo(function LeaderboardLine({
 
 const styles = StyleSheet.create({
   container: { flex: 1, paddingTop: 60 },
+  emptyWrap: { alignItems: "center", gap: spacing.lg, marginTop: spacing.xxl },
   emptyText: {
     textAlign: "center",
-    marginTop: spacing.xxl,
     fontSize: fonts.sizes.base,
     paddingHorizontal: spacing.xl,
   },
+  emptyButton: {
+    borderRadius: radii.full,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.xl,
+  },
+  emptyButtonText: { fontSize: fonts.sizes.base, fontWeight: fonts.weights.semibold },
 
   segmented: {
     flexDirection: "row",

@@ -12,13 +12,13 @@ const sections: Section[] = [
     icon: "🗺",
     title: "The mosaic",
     body:
-      "Earth is split into 1 km² tiles. Each tile holds ONE photo. To publish, you must physically be there. The world map becomes a living mosaic of everyone's photos.",
+      "Earth is split into 1 km² tiles. Each tile holds ONE photo. To claim a tile, you must physically be there. The world map becomes a living mosaic of everyone's photos.",
   },
   {
     icon: "⬡",
     title: "Reis",
     body:
-      "The game currency. Earn by playing: publish +10, discover a new tile +5, receive a vote +2, daily streaks (+20/+50/+200), daily quests & targets, territory income. Or top up with packs. Spend on takeovers, shields, fortifying.",
+      "The game currency. Earn by playing: claim a tile +10, discover a new tile +5, receive a vote +2, daily streaks (+20/+50/+200), daily quests & targets, territory income. Or top up with packs. Spend on takeovers, shields, fortifying.",
   },
   {
     icon: "⚔️",

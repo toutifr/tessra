@@ -10,12 +10,17 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import GridLayer from "../../src/components/GridLayer";
 import TileLayer from "../../src/components/TileLayer";
 import RushBanner from "../../src/components/RushBanner";
+import PressableScale from "../../src/components/PressableScale";
 import { useSquares, SquareWithImage } from "../../src/hooks/useSquares";
 import { getDailyTargets, DailyTarget } from "../../src/lib/economy";
 import { useSWR } from "../../src/lib/swr";
 import { onOptimisticUpload, type OptimisticUpload } from "../../src/lib/tileEvents";
 import { useAuth } from "../../src/providers/AuthProvider";
+import { useUserStats } from "../../src/hooks/useUserStats";
 import { getPlayfulMapStyle } from "../../src/lib/mapStyle";
+import { supabase } from "../../src/lib/supabase";
+import { minTakePrice } from "../../src/constants/iap";
+import { palette } from "../../src/theme";
 import * as Haptics from "expo-haptics";
 
 MapboxGL.setAccessToken(MAPBOX_ACCESS_TOKEN);
@@ -23,6 +28,10 @@ MapboxGL.setAccessToken(MAPBOX_ACCESS_TOKEN);
 const DEFAULT_CENTER: [number, number] = [2.3522, 48.8566]; // Paris
 const DEFAULT_ZOOM = 14;
 const HOT_WINDOW_MS = 24 * 60 * 60 * 1000;
+const REVIVE_WINDOW_MS = 20 * 60 * 60 * 1000;
+
+// First-run hint — shown at most once per app session
+let mapHintShownThisSession = false;
 
 function cellPolygonFeature(cellId: string): GeoJSON.Feature | null {
   const cell = cellFromId(cellId);
@@ -107,6 +116,118 @@ export default function MapScreen() {
     () => getDailyTargets(meId!, userLocation![1], userLocation![0]),
     5 * 60_000,
   );
+
+  // ─── CTA contextuel : la case où l'utilisateur se trouve ───
+  const myCellId = useMemo(
+    () => (userLocation ? cellAt(userLocation[1], userLocation[0]).id : null),
+    [userLocation],
+  );
+  // undefined = pas encore résolu ; null = pas de square (case vierge)
+  const [standingSquare, setStandingSquare] = useState<SquareWithImage | null | undefined>(
+    undefined,
+  );
+  // Cache par cellule des selects ciblés — évite de re-fetcher à chaque re-render
+  const standingCacheRef = useRef<Map<string, SquareWithImage | null>>(new Map());
+
+  useEffect(() => {
+    if (!myCellId) {
+      setStandingSquare(undefined);
+      return;
+    }
+    const inViewport = squaresRef.current.find((sq) => sq.cell_id === myCellId);
+    if (inViewport) {
+      setStandingSquare(inViewport);
+      return;
+    }
+    // Pas dans le viewport chargé → petit select ciblé (une fois par cellule)
+    if (standingCacheRef.current.has(myCellId)) {
+      setStandingSquare(standingCacheRef.current.get(myCellId) ?? null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase
+        .from("squares")
+        .select("id, cell_id, status, last_price, last_revived_at, last_activity_at, current_publication_id")
+        .eq("cell_id", myCellId)
+        .maybeSingle();
+      if (cancelled) return;
+      if (!data) {
+        standingCacheRef.current.set(myCellId, null);
+        setStandingSquare(null);
+        return;
+      }
+      let ownerId: string | null = null;
+      if (data.current_publication_id) {
+        const { data: pub } = await supabase
+          .from("publications")
+          .select("user_id")
+          .eq("id", data.current_publication_id)
+          .maybeSingle();
+        ownerId = pub?.user_id ?? null;
+      }
+      if (!cancelled) {
+        const resolved = { ...data, owner_id: ownerId } as SquareWithImage;
+        standingCacheRef.current.set(myCellId, resolved);
+        setStandingSquare(resolved);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [myCellId, squares]);
+
+  const standingCta = useMemo(() => {
+    if (!userLocation || !myCellId || standingSquare === undefined) return null;
+    const sq = standingSquare;
+    if (!sq || sq.status === "libre") {
+      return {
+        label: "📸 Claim this tile",
+        bg: palette.coral,
+        fg: "#FFFFFF",
+        route: `/upload?cellId=${myCellId}`,
+      };
+    }
+    if (sq.status !== "occupe") return null; // signalée / bloquée — rien à faire ici
+    if (sq.owner_id === meId) {
+      const revivedAt = sq.last_revived_at ? new Date(sq.last_revived_at).getTime() : 0;
+      const needsRevive = Date.now() - revivedAt > REVIVE_WINDOW_MS;
+      return needsRevive
+        ? {
+            label: "🔥 Revive this tile",
+            bg: palette.warning,
+            fg: "#FFFFFF",
+            route: `/square/${sq.id}`,
+          }
+        : {
+            label: "✓ Your tile",
+            bg: "rgba(28, 28, 30, 0.92)",
+            fg: "#FFFFFF",
+            route: `/square/${sq.id}`,
+          };
+    }
+    return {
+      label: `⚔️ Take over — ${minTakePrice(sq.last_price ?? 0)} ⬡`,
+      bg: "rgba(28, 28, 30, 0.92)",
+      fg: "#FFFFFF",
+      route: `/square/${sq.id}`,
+    };
+  }, [userLocation, myCellId, standingSquare, meId]);
+
+  // First-run hint : 0 publication → petite bulle pédagogique (1×/session)
+  const { stats, loading: statsLoading } = useUserStats();
+  const [hintVisible, setHintVisible] = useState(false);
+  useEffect(() => {
+    if (
+      !mapHintShownThisSession &&
+      !statsLoading &&
+      meId &&
+      stats.total_publications === 0
+    ) {
+      mapHintShownThisSession = true;
+      setHintVisible(true);
+    }
+  }, [statsLoading, stats.total_publications, meId]);
 
   const flyToTarget = useCallback((t: DailyTarget) => {
     cameraRef.current?.setCamera({
@@ -429,9 +550,41 @@ export default function MapScreen() {
         <RushBanner coords={userLocation ?? undefined} />
       </View>
 
-      {/* Objectifs du jour — carte compacte en bas à gauche */}
+      {/* First-run hint — une fois par session, pour les comptes sans tuile */}
+      {hintVisible && (
+        <View style={[styles.hintWrap, { top: insets.top + 56 }]}>
+          <View style={styles.hintCard}>
+            <Text style={styles.hintText}>Tap any tile on the map to explore it</Text>
+            <Pressable
+              onPress={() => setHintVisible(false)}
+              hitSlop={10}
+              accessibilityLabel="Dismiss hint"
+            >
+              <Ionicons name="close" size={16} color="rgba(255,255,255,0.7)" />
+            </Pressable>
+          </View>
+        </View>
+      )}
+
+      {/* CTA contextuel — la case où je me trouve, action évidente */}
+      {standingCta && (
+        <View style={[styles.ctaWrap, { bottom: insets.bottom + 24 }]} pointerEvents="box-none">
+          <PressableScale
+            style={[styles.ctaPill, { backgroundColor: standingCta.bg }]}
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              router.push(standingCta.route);
+            }}
+            accessibilityLabel={standingCta.label}
+          >
+            <Text style={[styles.ctaText, { color: standingCta.fg }]}>{standingCta.label}</Text>
+          </PressableScale>
+        </View>
+      )}
+
+      {/* Objectifs du jour — carte compacte en bas à gauche, au-dessus du CTA */}
       {targets && targets.length > 0 && (
-        <View style={[styles.targetsWrap, { bottom: insets.bottom + 24 }]}>
+        <View style={[styles.targetsWrap, { bottom: insets.bottom + (standingCta ? 84 : 24) }]}>
           {targetsCollapsed ? (
             <Pressable
               style={({ pressed }) => [styles.targetsChip, { opacity: pressed ? 0.8 : 1 }]}
@@ -541,6 +694,35 @@ const styles = StyleSheet.create({
   targetDotIcon: { fontSize: 14, color: "#FFFFFF" },
 
   targetsWrap: { position: "absolute", left: 12 },
+
+  hintWrap: { position: "absolute", left: 12, right: 12, alignItems: "center" },
+  hintCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    backgroundColor: "rgba(28, 28, 30, 0.92)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.15)",
+    borderRadius: 18,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+  },
+  hintText: { color: "#FFFFFF", fontSize: 13, fontWeight: "600" },
+
+  ctaWrap: { position: "absolute", left: 72, right: 72, alignItems: "center" },
+  ctaPill: {
+    borderRadius: 24,
+    paddingHorizontal: 22,
+    paddingVertical: 13,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.25)",
+    shadowColor: "#000",
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 6,
+  },
+  ctaText: { fontSize: 15, fontWeight: "700" },
   targetsChip: {
     backgroundColor: "rgba(28, 28, 30, 0.92)",
     borderWidth: 1,

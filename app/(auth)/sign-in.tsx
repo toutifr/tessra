@@ -33,7 +33,13 @@ export default function SignInScreen() {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     setLoading(false);
     if (error) {
-      Alert.alert("Error", error.message);
+      console.error("sign in failed:", error.message);
+      Alert.alert(
+        "Sign in failed",
+        /invalid/i.test(error.message)
+          ? "Wrong email or password. Please try again."
+          : "Could not sign you in. Please try again.",
+      );
     } else {
       router.replace("/(tabs)");
     }

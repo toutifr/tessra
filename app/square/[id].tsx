@@ -20,7 +20,7 @@ import { useVote } from "../../src/hooks/useVote";
 import { useShield } from "../../src/hooks/useShield";
 import { useFollow } from "../../src/hooks/useFollow";
 import { minTakePrice, rushPrice, tesselsToEur } from "../../src/constants/iap";
-import { fortifySquare, getGameState, GameState, InsufficientTesselsError, reviveSquare } from "../../src/lib/economy";
+import { fortifySquare, friendlyGameError, getGameState, GameState, InsufficientTesselsError, reviveSquare } from "../../src/lib/economy";
 import { useSWR } from "../../src/lib/swr";
 import { track } from "../../src/lib/track";
 import { hapticLight, hapticSuccess } from "../../src/lib/haptics";
@@ -55,6 +55,9 @@ export default function SquareDetailScreen() {
   const [history, setHistory] = useState<Publication[]>([]);
   const [fortifying, setFortifying] = useState(false);
   const [reviving, setReviving] = useState(false);
+  const [justRevived, setJustRevived] = useState(false);
+  const [shieldOpen, setShieldOpen] = useState(false);
+  const [fortifyOpen, setFortifyOpen] = useState(false);
   const c = useThemeColors();
 
   // Game state partagé en cache — pas de round-trip si déjà chaud
@@ -175,8 +178,9 @@ export default function SquareDetailScreen() {
       Alert.alert("Shield activated!", `Your tile is protected.`);
       const shield = await getActiveShield(square.id);
       setActiveShield(shield);
+      setShieldOpen(false);
     } else {
-      Alert.alert("Error", "Could not activate the shield.");
+      Alert.alert("Shield unavailable", "Could not activate the shield. Please try again.");
     }
   };
 
@@ -192,7 +196,8 @@ export default function SquareDetailScreen() {
       if (e instanceof InsufficientTesselsError) {
         router.push(`/paywall?need=${e.need - e.have}`);
       } else {
-        Alert.alert("Error", e instanceof Error ? e.message : "Could not fortify");
+        console.error("fortify failed:", e);
+        Alert.alert("Fortify failed", friendlyGameError(e, "fortify"));
       }
     } finally {
       setFortifying(false);
@@ -225,9 +230,11 @@ export default function SquareDetailScreen() {
         last_activity_at: nowIso,
       });
       track("revive", { square_id: square.id, reward: res.reward });
+      setJustRevived(true);
       Alert.alert("Revived", `+${res.reward} ⬡ — tile revived!`);
     } catch (e) {
-      Alert.alert("Error", e instanceof Error ? e.message : "Could not revive this tile");
+      console.error("revive failed:", e);
+      Alert.alert("Revive failed", friendlyGameError(e, "revive"));
     } finally {
       setReviving(false);
     }
@@ -241,20 +248,6 @@ export default function SquareDetailScreen() {
     } else {
       await follow(publication.user_id);
       setIsFollowingOwner(true);
-    }
-  };
-
-  const getActionLabel = (sq: Square): string | null => {
-    if (activeShield) return "Tile protected";
-    switch (sq.status) {
-      case "libre":
-        return "Publish for free";
-      case "occupe": {
-        const price = getMinPrice(sq);
-        return `Take over — ${price} ⬡`;
-      }
-      default:
-        return null;
     }
   };
 
@@ -276,13 +269,15 @@ export default function SquareDetailScreen() {
     );
   }
 
-  const actionLabel = getActionLabel(square);
   const isReported = square.status === "signale";
   const minPrice = getMinPrice(square);
+  const freshDays =
+    (Date.now() - new Date(square.last_activity_at).getTime()) / 86_400_000;
+  const needsRevive = !justRevived && freshDays >= 3;
 
   return (
     <ScrollView style={[styles.container, { backgroundColor: c.bg }]} contentContainerStyle={styles.content}>
-      {/* Hero Image */}
+      {/* 1. Photo — avec badges ⚡ / bouclier */}
       {publication?.image_url && (
         <View style={styles.imageWrapper}>
           <Image
@@ -303,37 +298,17 @@ export default function SquareDetailScreen() {
               <Text style={styles.pulseBadgeText}>⚡</Text>
             </View>
           )}
+          {activeShield && (
+            <View style={styles.shieldPhotoBadge}>
+              <Text style={styles.pulseBadgeText}>
+                {activeShield.tier === "gold" ? "🥇" : activeShield.tier === "silver" ? "🥈" : "🥉"}
+              </Text>
+            </View>
+          )}
         </View>
       )}
 
-      {/* Secteur */}
-      {square.cell_id ? (
-        <Text style={[styles.sectorText, { color: c.textTertiary }]}>
-          {sectorLabel(square.cell_id)}
-        </Text>
-      ) : null}
-
-      {/* Status + Shield */}
-      <View style={styles.statusRow}>
-        <View style={[styles.statusBadge, { backgroundColor: c.bgTertiary }]}>
-          <View style={[styles.statusDot, { backgroundColor: STATUS_COLORS[square.status] }]} />
-          <Text style={[styles.statusText, { color: c.text }]}>
-            {STATUS_LABELS[square.status]}
-          </Text>
-        </View>
-        {activeShield && (
-          <View style={[styles.shieldBadge, { backgroundColor: `${palette.warning}20` }]}>
-            <Text style={styles.shieldEmoji}>
-              {activeShield.tier === "gold" ? "🥇" : activeShield.tier === "silver" ? "🥈" : "🥉"}
-            </Text>
-            <Text style={[styles.shieldText, { color: palette.warning }]}>
-              {activeShield.tier === "gold" ? "Gold" : activeShield.tier === "silver" ? "Silver" : "Bronze"}
-            </Text>
-          </View>
-        )}
-      </View>
-
-      {/* Interactions: vote + follow */}
+      {/* Vote + follow — juste sous la photo, jamais enterrés */}
       {publication && !isReported && (
         <View style={styles.interactionRow}>
           <Pressable
@@ -379,141 +354,229 @@ export default function SquareDetailScreen() {
         </View>
       )}
 
-      {/* Price Card */}
-      <View style={[styles.priceCard, { backgroundColor: c.bgSecondary, borderColor: c.cardBorder }, shadows.sm]}>
-        <Text style={[styles.priceLabel, { color: c.textSecondary }]}>
-          {square.status === "libre" ? "Publication" : "Minimum price"}
+      {/* 2. Secteur + statut + fraîcheur */}
+      {square.cell_id ? (
+        <Text style={[styles.sectorText, { color: c.textTertiary }]}>
+          {sectorLabel(square.cell_id)}
         </Text>
-        {square.status !== "libre" && rushActive ? (
-          <View style={styles.rushPriceRow}>
-            <Text style={[styles.oldPrice, { color: c.textTertiary }]}>
-              {getBasePrice(square)} ⬡
-            </Text>
-            <Text style={[styles.price, { color: c.text }]}>{minPrice} ⬡</Text>
-            <View style={styles.rushBadge}>
-              <Text style={styles.rushBadgeText}>🔥 −50%</Text>
-            </View>
-          </View>
-        ) : (
-          <Text style={[styles.price, { color: c.text }]}>
-            {square.status === "libre" ? "Free" : `${minPrice} ⬡`}
+      ) : null}
+      <View style={styles.statusRow}>
+        <View style={[styles.statusBadge, { backgroundColor: c.bgTertiary }]}>
+          <View style={[styles.statusDot, { backgroundColor: STATUS_COLORS[square.status] }]} />
+          <Text style={[styles.statusText, { color: c.text }]}>
+            {STATUS_LABELS[square.status]}
           </Text>
-        )}
-        {square.status !== "libre" && (
-          <Text style={[styles.priceDetail, { color: c.textTertiary }]}>
-            {tesselsToEur(minPrice)}
-          </Text>
-        )}
-        {square.last_price > 0 && (
-          <Text style={[styles.priceDetail, { color: c.textTertiary }]}>
-            Last price: {square.last_price} ⬡
+        </View>
+        {square.status === "occupe" && (
+          <Text style={[styles.freshnessLine, { color: c.textSecondary }]}>
+            {justRevived ? "🔥 Alive" : freshnessLabel(square.last_activity_at)}
           </Text>
         )}
       </View>
 
-      {/* Action Button */}
-      {actionLabel && (
-        <PressableScale
-          style={[
-            styles.actionButton,
-            { backgroundColor: activeShield ? c.bgTertiary : c.primary },
-            !activeShield && shadows.md,
-          ]}
-          onPress={handleAction}
-          disabled={!!activeShield}
-        >
-          <Text style={[
-            styles.actionText,
-            { color: activeShield ? c.textTertiary : c.primaryText },
-          ]}>
-            {actionLabel}
-          </Text>
-        </PressableScale>
-      )}
-
-      {/* Revive (owner) — sur place, remet la fraîcheur à zéro */}
-      {isOwner && square.status === "occupe" && (
-        <View style={styles.section}>
-          <Text style={[styles.freshnessLine, { color: c.textSecondary }]}>
-            {freshnessLabel(square.last_activity_at)}
-          </Text>
+      {/* 3. UN SEUL CTA principal, selon qui regarde */}
+      {isOwner && square.status === "occupe" ? (
+        <View style={styles.ctaBlock}>
+          {needsRevive ? (
+            <>
+              <PressableScale
+                style={[
+                  styles.actionButton,
+                  { backgroundColor: palette.warning, opacity: reviving ? 0.7 : 1 },
+                  shadows.md,
+                ]}
+                onPress={handleRevive}
+                disabled={reviving}
+              >
+                <Text style={[styles.actionText, { color: "#FFFFFF" }]}>
+                  {reviving ? "Reviving…" : "🔥 Revive"}
+                </Text>
+              </PressableScale>
+              <Text style={[styles.ctaNote, { color: c.textTertiary }]}>
+                Be here in person to reset freshness (+5 ⬡)
+              </Text>
+            </>
+          ) : (
+            <View style={[styles.actionButton, styles.revivedState, { backgroundColor: c.bgTertiary }]}>
+              <Text style={[styles.actionText, { color: c.textSecondary }]}>
+                Revived ✓ — your tile is alive
+              </Text>
+            </View>
+          )}
+        </View>
+      ) : !isOwner && square.status === "libre" ? (
+        <View style={styles.ctaBlock}>
           <PressableScale
-            style={[
-              styles.reviveButton,
-              { backgroundColor: c.primary, opacity: reviving ? 0.7 : 1 },
-              shadows.md,
-            ]}
-            onPress={handleRevive}
-            disabled={reviving}
+            style={[styles.actionButton, { backgroundColor: c.primary }, shadows.md]}
+            onPress={handleAction}
           >
             <Text style={[styles.actionText, { color: c.primaryText }]}>
-              {reviving ? "Reviving…" : "Revive this tile"}
+              📸 Claim this tile — Free
             </Text>
           </PressableScale>
+          <Text style={[styles.ctaNote, { color: c.textTertiary }]}>
+            You must be physically here
+          </Text>
         </View>
-      )}
+      ) : !isOwner && square.status === "occupe" ? (
+        <View style={styles.ctaBlock}>
+          <PressableScale
+            style={[
+              styles.actionButton,
+              { backgroundColor: activeShield ? c.bgTertiary : c.primary },
+              !activeShield && shadows.md,
+            ]}
+            onPress={handleAction}
+            disabled={!!activeShield}
+          >
+            <Text style={[
+              styles.actionText,
+              { color: activeShield ? c.textTertiary : c.primaryText },
+            ]}>
+              {activeShield ? "🛡 Tile protected" : `Take over — ${minPrice} ⬡`}
+            </Text>
+          </PressableScale>
+          {activeShield ? (
+            <Text style={[styles.ctaNote, { color: c.textTertiary }]}>
+              Protected until {new Date(activeShield.expires_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+            </Text>
+          ) : (
+            <>
+              <Text style={[styles.ctaNote, { color: c.textTertiary }]}>
+                {tesselsToEur(minPrice)}
+                {square.last_price > 0 ? ` · Last price: ${square.last_price} ⬡` : ""}
+              </Text>
+              {rushActive && (
+                <View style={styles.rushPriceRow}>
+                  <Text style={[styles.oldPrice, { color: c.textTertiary }]}>
+                    {getBasePrice(square)} ⬡
+                  </Text>
+                  <View style={styles.rushBadge}>
+                    <Text style={styles.rushBadgeText}>🔥 Rush Hour −50%</Text>
+                  </View>
+                </View>
+              )}
+            </>
+          )}
+        </View>
+      ) : null}
 
-      {/* Shield Activation (owner) */}
-      {isOwner && !activeShield && (
+      {/* 4. Défense (owner) — Shield + Fortify, repliés derrière des accordéons */}
+      {isOwner && square.status === "occupe" && (
         <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: c.text }]}>Protect this tile</Text>
-          <View style={styles.shieldOptions}>
-            {([
-              { tier: "bronze" as const, label: "Bronze", desc: "1h — Free (1/day)", color: palette.bronze },
-              { tier: "silver" as const, label: "Silver", desc: "6h — 150 ⬡", color: palette.silver },
-              { tier: "gold" as const, label: "Gold", desc: "24h — 500 ⬡", color: palette.gold },
-            ]).map((opt) => (
+          <Text style={[styles.sectionTitle, { color: c.text }]}>Defend</Text>
+
+          {/* 🛡 Shield */}
+          {activeShield ? (
+            <View style={[styles.defendRow, { backgroundColor: c.card, borderColor: c.cardBorder }, shadows.sm]}>
+              <Text style={styles.defendIcon}>🛡</Text>
+              <View style={styles.shieldInfo}>
+                <Text style={[styles.shieldOptionTitle, { color: c.text }]}>
+                  Shield active ({activeShield.tier === "gold" ? "Gold" : activeShield.tier === "silver" ? "Silver" : "Bronze"})
+                </Text>
+                <Text style={[styles.shieldOptionDesc, { color: c.textTertiary }]}>
+                  Untouchable until {new Date(activeShield.expires_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                </Text>
+              </View>
+            </View>
+          ) : (
+            <>
               <Pressable
-                key={opt.tier}
                 style={({ pressed }) => [
-                  styles.shieldOption,
+                  styles.defendRow,
                   { backgroundColor: c.card, borderColor: c.cardBorder, opacity: pressed ? 0.85 : 1 },
                   shadows.sm,
                 ]}
-                onPress={() => handleShield(opt.tier)}
-                disabled={activating}
+                onPress={() => { hapticLight(); setShieldOpen((v) => !v); }}
               >
-                <View style={[styles.shieldDot, { backgroundColor: opt.color }]} />
+                <Text style={styles.defendIcon}>🛡</Text>
                 <View style={styles.shieldInfo}>
-                  <Text style={[styles.shieldOptionTitle, { color: c.text }]}>{opt.label}</Text>
-                  <Text style={[styles.shieldOptionDesc, { color: c.textTertiary }]}>{opt.desc}</Text>
-                </View>
-              </Pressable>
-            ))}
-          </View>
-        </View>
-      )}
-
-      {/* Fortify (owner) — augmente le prix de reprise, remet le decay à zéro */}
-      {isOwner && square.status === "occupe" && square.last_price < 10000 && (
-        <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: c.text }]}>Fortify this tile</Text>
-          <Text style={[styles.shieldOptionDesc, { color: c.textTertiary }]}>
-            Make your tile more expensive to take. Current price: {square.last_price} ⬡ → an
-            attacker will pay at least {minTakePrice(square.last_price)} ⬡.
-          </Text>
-          <View style={[styles.shieldOptions, { marginTop: spacing.sm }]}>
-            {[100, 500, 1000].map((amount) => (
-              <Pressable
-                key={amount}
-                style={({ pressed }) => [
-                  styles.shieldOption,
-                  { backgroundColor: c.card, borderColor: c.cardBorder, opacity: pressed || fortifying ? 0.85 : 1 },
-                  shadows.sm,
-                ]}
-                onPress={() => handleFortify(amount)}
-                disabled={fortifying}
-              >
-                <View style={[styles.shieldDot, { backgroundColor: palette.gold }]} />
-                <View style={styles.shieldInfo}>
-                  <Text style={[styles.shieldOptionTitle, { color: c.text }]}>+{amount} ⬡</Text>
+                  <Text style={[styles.shieldOptionTitle, { color: c.text }]}>Shield</Text>
                   <Text style={[styles.shieldOptionDesc, { color: c.textTertiary }]}>
-                    {tesselsToEur(amount)} — min. takeover {minTakePrice(Math.min(10000, square.last_price + amount))} ⬡
+                    Block takeovers for a few hours
                   </Text>
                 </View>
+                <Text style={[styles.defendChevron, { color: c.textTertiary }]}>
+                  {shieldOpen ? "▴" : "▾"}
+                </Text>
               </Pressable>
-            ))}
-          </View>
+              {shieldOpen && (
+                <View style={[styles.shieldOptions, { marginTop: spacing.sm, marginBottom: spacing.sm }]}>
+                  {([
+                    { tier: "bronze" as const, label: "Bronze", desc: "1h — Free (1/day)", color: palette.bronze },
+                    { tier: "silver" as const, label: "Silver", desc: "6h — 150 ⬡", color: palette.silver },
+                    { tier: "gold" as const, label: "Gold", desc: "24h — 500 ⬡", color: palette.gold },
+                  ]).map((opt) => (
+                    <Pressable
+                      key={opt.tier}
+                      style={({ pressed }) => [
+                        styles.shieldOption,
+                        { backgroundColor: c.card, borderColor: c.cardBorder, opacity: pressed ? 0.85 : 1 },
+                        shadows.sm,
+                      ]}
+                      onPress={() => handleShield(opt.tier)}
+                      disabled={activating}
+                    >
+                      <View style={[styles.shieldDot, { backgroundColor: opt.color }]} />
+                      <View style={styles.shieldInfo}>
+                        <Text style={[styles.shieldOptionTitle, { color: c.text }]}>{opt.label}</Text>
+                        <Text style={[styles.shieldOptionDesc, { color: c.textTertiary }]}>{opt.desc}</Text>
+                      </View>
+                    </Pressable>
+                  ))}
+                </View>
+              )}
+            </>
+          )}
+
+          {/* 💪 Fortify */}
+          {square.last_price < 10000 && (
+            <>
+              <Pressable
+                style={({ pressed }) => [
+                  styles.defendRow,
+                  { backgroundColor: c.card, borderColor: c.cardBorder, opacity: pressed ? 0.85 : 1, marginTop: spacing.sm },
+                  shadows.sm,
+                ]}
+                onPress={() => { hapticLight(); setFortifyOpen((v) => !v); }}
+              >
+                <Text style={styles.defendIcon}>💪</Text>
+                <View style={styles.shieldInfo}>
+                  <Text style={[styles.shieldOptionTitle, { color: c.text }]}>Fortify</Text>
+                  <Text style={[styles.shieldOptionDesc, { color: c.textTertiary }]}>
+                    Raise the takeover price — now {square.last_price} ⬡, attackers pay ≥ {minTakePrice(square.last_price)} ⬡
+                  </Text>
+                </View>
+                <Text style={[styles.defendChevron, { color: c.textTertiary }]}>
+                  {fortifyOpen ? "▴" : "▾"}
+                </Text>
+              </Pressable>
+              {fortifyOpen && (
+                <View style={[styles.shieldOptions, { marginTop: spacing.sm }]}>
+                  {[100, 500, 1000].map((amount) => (
+                    <Pressable
+                      key={amount}
+                      style={({ pressed }) => [
+                        styles.shieldOption,
+                        { backgroundColor: c.card, borderColor: c.cardBorder, opacity: pressed || fortifying ? 0.85 : 1 },
+                        shadows.sm,
+                      ]}
+                      onPress={() => handleFortify(amount)}
+                      disabled={fortifying}
+                    >
+                      <View style={[styles.shieldDot, { backgroundColor: palette.gold }]} />
+                      <View style={styles.shieldInfo}>
+                        <Text style={[styles.shieldOptionTitle, { color: c.text }]}>+{amount} ⬡</Text>
+                        <Text style={[styles.shieldOptionDesc, { color: c.textTertiary }]}>
+                          {tesselsToEur(amount)} — min. takeover {minTakePrice(Math.min(10000, square.last_price + amount))} ⬡
+                        </Text>
+                      </View>
+                    </Pressable>
+                  ))}
+                </View>
+              )}
+            </>
+          )}
         </View>
       )}
 
@@ -590,6 +653,39 @@ const styles = StyleSheet.create({
     borderColor: "#818CF8",
   },
   pulseBadgeText: { fontSize: 14 },
+  shieldPhotoBadge: {
+    position: "absolute",
+    top: spacing.sm,
+    left: spacing.sm,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: "rgba(0,0,0,0.55)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  ctaBlock: {
+    marginBottom: spacing.lg,
+    alignItems: "center",
+  },
+  ctaNote: {
+    fontSize: fonts.sizes.xs,
+    marginTop: spacing.sm,
+    textAlign: "center",
+    paddingHorizontal: spacing.base,
+  },
+  revivedState: { marginBottom: 0 },
+
+  defendRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: spacing.md,
+    borderRadius: radii.md,
+    borderWidth: 1,
+  },
+  defendIcon: { fontSize: 18, marginRight: spacing.md },
+  defendChevron: { fontSize: fonts.sizes.md, fontWeight: fonts.weights.semibold },
   freshnessLine: {
     fontSize: fonts.sizes.sm,
     fontWeight: fonts.weights.semibold,
@@ -650,7 +746,10 @@ const styles = StyleSheet.create({
   },
   priceLabel: { fontSize: fonts.sizes.xs, marginBottom: spacing.xs },
   price: { fontSize: fonts.sizes.xxl, fontWeight: fonts.weights.heavy },
-  rushPriceRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
+  rushPriceRow: {
+    flexDirection: "row", alignItems: "center", justifyContent: "center",
+    gap: spacing.sm, marginTop: spacing.sm,
+  },
   oldPrice: {
     fontSize: fonts.sizes.md,
     fontWeight: fonts.weights.semibold,
@@ -666,9 +765,9 @@ const styles = StyleSheet.create({
   priceDetail: { fontSize: fonts.sizes.xs, marginTop: spacing.xs },
 
   actionButton: {
+    alignSelf: "stretch",
     marginHorizontal: spacing.base, borderRadius: radii.full,
     padding: spacing.base, alignItems: "center",
-    marginBottom: spacing.lg,
   },
   actionText: { fontSize: fonts.sizes.base, fontWeight: fonts.weights.semibold },
 
