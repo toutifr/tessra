@@ -9,6 +9,24 @@ export function hapticLight(): void {
   }
 }
 
+/** Feedback moyen — bouton caméra, actions marquées */
+export function hapticMedium(): void {
+  try {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+  } catch {
+    // silencieux
+  }
+}
+
+/** Feedback sélection — changement d'onglet, toggle */
+export function hapticSelection(): void {
+  try {
+    Haptics.selectionAsync().catch(() => {});
+  } catch {
+    // silencieux
+  }
+}
+
 /** Feedback succès — publication, claim, achat */
 export function hapticSuccess(): void {
   try {

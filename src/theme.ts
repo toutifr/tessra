@@ -1,23 +1,24 @@
 /**
- * Tessra Design System — "Minecraft-soft"
- * Terre, herbe, or : conquête de territoire, sobre et élégant.
- * Dark = deepslate (identité première) · Light = parchemin.
+ * Piri Design System v3 — "Atlas Arcade"
+ * Hybride réseau social × vrai jeu mobile.
+ * Photo-first élégant + couche jeu vibrante (chunky, or, progression).
+ * Dark = riche (identité première) · Light = parchemin chaleureux.
  */
-import { useColorScheme, StyleSheet, TextStyle, ViewStyle } from "react-native";
+import { useColorScheme, TextStyle, ViewStyle } from "react-native";
 
 // ─── Palette ──────────────────────────────────────────────
 export const palette = {
   // Primary — grass (claim / CTA / succès)
-  grass:       "#6FA860",
-  grassDark:   "#5C8F50",
-  grassLight:  "#83B675",
-  grassSoft:   "#EAF1E4",
+  grass:       "#58B368",
+  grassDark:   "#3E8E4E",
+  grassLight:  "#79C687",
+  grassSoft:   "#E3F4E6",
 
   // Back-compat aliases (ancienne palette corail → grass)
-  coral:       "#6FA860",
-  coralDark:   "#5C8F50",
-  coralLight:  "#83B675",
-  coralSoft:   "#EAF1E4",
+  coral:       "#58B368",
+  coralDark:   "#3E8E4E",
+  coralLight:  "#79C687",
+  coralSoft:   "#E3F4E6",
 
   // Neutral
   white:       "#FFFFFF",
@@ -34,43 +35,43 @@ export const palette = {
   black:       "#111111",
 
   // Parchment — surfaces claires chaudes
-  parchment:      "#F4F1EA",
-  parchmentDeep:  "#EDE9DF",
-  parchmentEdge:  "#E3DDD0",
+  parchment:      "#F7F4ED",
+  parchmentDeep:  "#EFEAE0",
+  parchmentEdge:  "#E4DCCC",
 
-  // Deepslate — surfaces sombres
-  dark50:      "#131619",
-  dark100:     "#1A1E22",
-  dark200:     "#20262B",
-  dark300:     "#2A3138",
-  darkBorder:  "#2E353C",
-  darkDeep:    "#0F1214",
+  // Dark — surfaces sombres riches
+  darkDeep:    "#0C1013",
+  dark50:      "#11161A",
+  dark100:     "#1A2126",
+  dark200:     "#232C33",
+  dark300:     "#2C363E",
+  darkBorder:  "rgba(255,255,255,0.08)",
 
   // Game accents
-  gold:        "#F2B441", // Reis / valeur / territoire
-  goldDark:    "#CE9226",
-  redstone:    "#C25B52", // danger / raid
-  redstoneDark:"#AD4B42",
-  redstoneDeep:"#7A4A45", // bloqué
-  diamond:     "#5FB3BE", // info / pulse
-  diamondDark: "#3F96A2",
-  diamondLight:"#8CCAD3",
-  amber:       "#E8973A", // warning / fading
-  amberDark:   "#C97F2A",
+  gold:        "#FFC94A", // Reis / valeur / territoire
+  goldDark:    "#D9A32E",
+  redstone:    "#E4614F", // danger / raid
+  redstoneDark:"#C24B3C",
+  redstoneDeep:"#8A453B", // bloqué
+  diamond:     "#4CC3D9", // info / pulse
+  diamondDark: "#35A0B5",
+  diamondLight:"#82D7E6",
+  amber:       "#FFA53E", // warning / fading
+  amberDark:   "#DB872B",
 
   // Semantic
-  success:     "#6FA860",
-  warning:     "#E8973A",
-  error:       "#C25B52",
-  info:        "#5FB3BE",
+  success:     "#58B368",
+  warning:     "#FFA53E",
+  error:       "#E4614F",
+  info:        "#4CC3D9",
 
   // Shields
   bronze:      "#CD7F32",
   silver:      "#C0C0C0",
 
-  // Accent — or adouci (récompenses, highlights)
-  accent:      "#F2B441",
-  accentSoft:  "#F8ECD4",
+  // Accent — or (récompenses, highlights)
+  accent:      "#FFC94A",
+  accentSoft:  "#FBEED0",
 } as const;
 
 // ─── Theme Tokens ─────────────────────────────────────────
@@ -80,6 +81,7 @@ export interface ThemeColors {
   bgSecondary:   string;
   bgTertiary:    string;
   card:          string;
+  cardRaised:    string;
   cardBorder:    string;
 
   // Text
@@ -92,6 +94,7 @@ export interface ThemeColors {
   primary:       string;
   primarySoft:   string;
   primaryText:   string;
+  tint:          string;
 
   // Accent (or)
   accent:        string;
@@ -110,6 +113,7 @@ export interface ThemeColors {
   tabBar:        string;
   tabBarBorder:  string;
   overlay:       string;
+  scrim:         string;
 }
 
 const lightColors: ThemeColors = {
@@ -117,6 +121,7 @@ const lightColors: ThemeColors = {
   bgSecondary:   palette.parchmentDeep,
   bgTertiary:    palette.parchmentEdge,
   card:          palette.white,
+  cardRaised:    palette.white,
   cardBorder:    palette.parchmentEdge,
 
   text:          palette.gray900,
@@ -127,6 +132,7 @@ const lightColors: ThemeColors = {
   primary:       palette.grassDark,
   primarySoft:   palette.grassSoft,
   primaryText:   palette.white,
+  tint:          palette.grassDark,
 
   accent:        palette.accent,
   accentSoft:    palette.accentSoft,
@@ -141,7 +147,8 @@ const lightColors: ThemeColors = {
   inputBorder:   palette.parchmentEdge,
   tabBar:        palette.white,
   tabBarBorder:  "rgba(0,0,0,0.06)",
-  overlay:       "rgba(19,22,25,0.5)",
+  overlay:       "rgba(17,22,26,0.5)",
+  scrim:         "rgba(0,0,0,0.55)",
 };
 
 const darkColors: ThemeColors = {
@@ -149,6 +156,7 @@ const darkColors: ThemeColors = {
   bgSecondary:   palette.dark100,
   bgTertiary:    palette.dark200,
   card:          palette.dark100,
+  cardRaised:    palette.dark200,
   cardBorder:    palette.dark200,
 
   text:          palette.gray100,
@@ -157,11 +165,12 @@ const darkColors: ThemeColors = {
   textInverse:   palette.black,
 
   primary:       palette.grass,
-  primarySoft:   "rgba(111,168,96,0.16)",
+  primarySoft:   "rgba(88,179,104,0.16)",
   primaryText:   palette.white,
+  tint:          palette.grass,
 
   accent:        palette.accent,
-  accentSoft:    "rgba(242,180,65,0.15)",
+  accentSoft:    "rgba(255,201,74,0.15)",
 
   success:       palette.success,
   warning:       palette.warning,
@@ -171,9 +180,10 @@ const darkColors: ThemeColors = {
   separator:     palette.dark300,
   inputBg:       palette.dark100,
   inputBorder:   palette.dark300,
-  tabBar:        palette.darkDeep,
-  tabBarBorder:  "rgba(255,255,255,0.06)",
+  tabBar:        palette.dark100,
+  tabBarBorder:  palette.darkBorder,
   overlay:       "rgba(0,0,0,0.65)",
+  scrim:         "rgba(0,0,0,0.55)",
 };
 
 export function useThemeColors(): ThemeColors {
@@ -187,8 +197,7 @@ export function useIsDark(): boolean {
 
 // ─── Typography ───────────────────────────────────────────
 export const fonts = {
-  // iOS: SF Pro is default. Android: Roboto is default.
-  // We rely on system fonts for clean native feel.
+  // iOS: SF Pro. Android: Roboto. System fonts = feel natif propre.
   sizes: {
     xs:    11,
     sm:    13,
@@ -197,6 +206,7 @@ export const fonts = {
     lg:    20,
     xl:    24,
     xxl:   28,
+    hero:  32,
     xxxl:  34,
   },
   weights: {
@@ -210,6 +220,10 @@ export const fonts = {
     tight:   1.2,
     normal:  1.4,
     relaxed: 1.6,
+  },
+  letterSpacing: {
+    tight:  -0.4,
+    normal: 0,
   },
 } as const;
 
@@ -227,11 +241,17 @@ export const spacing = {
 
 // ─── Radii ────────────────────────────────────────────────
 export const radii = {
-  sm:   6,
-  md:   10,
-  lg:   12,
-  xl:   16,
+  sm:   8,
+  md:   12,
+  lg:   16,
+  xl:   20,
+  xxl:  28,
   full: 9999,
+} as const;
+
+// ─── Edges (tranche 3D-soft des boutons de jeu) ───────────
+export const edges = {
+  button: 4,
 } as const;
 
 // ─── Shadows ──────────────────────────────────────────────
@@ -246,15 +266,15 @@ export const shadows = {
   md: {
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
+    shadowOpacity: 0.1,
     shadowRadius: 8,
     elevation: 3,
   } as ViewStyle,
   lg: {
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.14,
     shadowRadius: 16,
-    elevation: 6,
+    elevation: 7,
   } as ViewStyle,
 } as const;
