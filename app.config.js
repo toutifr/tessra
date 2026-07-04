@@ -45,6 +45,12 @@ export default {
     web: {
       favicon: "./assets/favicon.png",
     },
+    updates: {
+      url: "https://u.expo.dev/e84d7473-636a-4b22-884e-d87220828c42",
+    },
+    runtimeVersion: {
+      policy: "appVersion",
+    },
     plugins: [
       "expo-router",
       "expo-secure-store",
