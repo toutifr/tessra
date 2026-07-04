@@ -34,6 +34,8 @@ import {
   TeamRow,
 } from "../../src/lib/economy";
 import { useSWR, mutate, getCached, invalidate } from "../../src/lib/swr";
+import { cellFromId } from "../../src/lib/kmGrid";
+import { focusOnMap } from "../../src/lib/mapFocus";
 import { useAuth } from "../../src/providers/AuthProvider";
 import RushBanner from "../../src/components/RushBanner";
 import LinkAccountSheet, { useIsGuest } from "../../src/components/LinkAccountSheet";
@@ -94,12 +96,14 @@ const FeedCard = memo(function FeedCard({
   c,
   onVote,
   onOpen,
+  onLocate,
 }: {
   item: FeedItem;
   userId: string | null;
   c: ThemeColors;
   onVote: (item: FeedItem) => void;
   onOpen: (squareId: string) => void;
+  onLocate: (cellId: string) => void;
 }) {
   const canVote = !item.has_voted && item.owner_id !== userId;
   return (
@@ -130,6 +134,16 @@ const FeedCard = memo(function FeedCard({
             {relativeTime(item.created_at)}
           </Text>
         </View>
+        {!!item.cell_id && (
+          <Pressable
+            onPress={() => onLocate(item.cell_id)}
+            hitSlop={8}
+            style={({ pressed }) => [styles.locateButton, { opacity: pressed ? 0.6 : 1 }]}
+            accessibilityLabel="Locate on map"
+          >
+            <Ionicons name="map-outline" size={18} color={c.textTertiary} />
+          </Pressable>
+        )}
         {item.is_shielded && (
           <View style={[styles.shieldBadge, { backgroundColor: `${palette.warning}20` }]}>
             <Ionicons name="shield" size={11} color={palette.warning} />
@@ -358,11 +372,25 @@ export default function DiscoverScreen() {
     router.push(`/square/${squareId}`);
   }, []);
 
+  const locateOnMap = useCallback((cellId: string) => {
+    const cell = cellFromId(cellId);
+    if (!cell) return;
+    focusOnMap({ lat: cell.center.lat, lng: cell.center.lng });
+    router.push("/(tabs)");
+  }, []);
+
   const renderCard = useCallback(
     ({ item }: { item: FeedItem }) => (
-      <FeedCard item={item} userId={userId} c={c} onVote={handleVote} onOpen={openSquare} />
+      <FeedCard
+        item={item}
+        userId={userId}
+        c={c}
+        onVote={handleVote}
+        onOpen={openSquare}
+        onLocate={locateOnMap}
+      />
     ),
-    [userId, c, handleVote, openSquare],
+    [userId, c, handleVote, openSquare, locateOnMap],
   );
 
   const handleCreateTeam = async () => {
@@ -945,6 +973,7 @@ const styles = StyleSheet.create({
     paddingVertical: 3,
   },
   shieldBadgeText: { fontSize: fonts.sizes.xs, fontWeight: fonts.weights.semibold },
+  locateButton: { padding: spacing.xs },
   cardImage: { width: IMAGE_SIZE, height: IMAGE_SIZE },
   cardFooter: {
     flexDirection: "row",

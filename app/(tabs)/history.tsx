@@ -8,9 +8,12 @@ import {
   View,
 } from "react-native";
 import { router, useFocusEffect } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { supabase } from "../../src/lib/supabase";
 import { useSWR } from "../../src/lib/swr";
+import { cellFromId } from "../../src/lib/kmGrid";
+import { focusOnMap } from "../../src/lib/mapFocus";
 import { useAuth } from "../../src/providers/AuthProvider";
 import { ListSkeleton } from "../../src/components/Skeleton";
 import PressableScale from "../../src/components/PressableScale";
@@ -23,6 +26,7 @@ interface HistoryEntry {
   ended_at: string | null;
   status: string;
   acquisition_mode: string;
+  cell_id: string | null;
 }
 
 const STATUS_LABELS: Record<string, string> = {
@@ -43,7 +47,7 @@ async function fetchHistory(uid: string, filter: FilterType): Promise<HistoryEnt
   // Try publication_history first
   let query = supabase
     .from("publication_history")
-    .select("id, image_url, started_at, ended_at, status, acquisition_mode")
+    .select("id, image_url, started_at, ended_at, status, acquisition_mode, squares(cell_id)")
     .eq("user_id", uid)
     .order("started_at", { ascending: false });
 
@@ -52,12 +56,22 @@ async function fetchHistory(uid: string, filter: FilterType): Promise<HistoryEnt
   }
 
   const { data } = await query;
-  if (data && data.length > 0) return data as HistoryEntry[];
+  if (data && data.length > 0) {
+    return (data as any[]).map((r) => ({
+      id: r.id,
+      image_url: r.image_url,
+      started_at: r.started_at,
+      ended_at: r.ended_at,
+      status: r.status,
+      acquisition_mode: r.acquisition_mode,
+      cell_id: r.squares?.cell_id ?? null,
+    }));
+  }
 
   // Fallback: query publications directly
   let pubQuery = supabase
     .from("publications")
-    .select("id, image_url, created_at, status")
+    .select("id, image_url, created_at, status, price_paid, squares(cell_id)")
     .eq("user_id", uid)
     .order("created_at", { ascending: false });
 
@@ -67,13 +81,14 @@ async function fetchHistory(uid: string, filter: FilterType): Promise<HistoryEnt
 
   const { data: pubData } = await pubQuery;
   if (!pubData) return [];
-  return pubData.map((p: any) => ({
+  return (pubData as any[]).map((p) => ({
     id: p.id,
     image_url: p.image_url,
     started_at: p.created_at,
     ended_at: null,
     status: p.status,
     acquisition_mode: p.price_paid ? "paid" : "free",
+    cell_id: p.squares?.cell_id ?? null,
   }));
 }
 
@@ -90,9 +105,11 @@ function formatDate(dateStr: string) {
 const HistoryCard = memo(function HistoryCard({
   item,
   c,
+  onLocate,
 }: {
   item: HistoryEntry;
   c: ThemeColors;
+  onLocate: (cellId: string) => void;
 }) {
   return (
     <View style={[styles.card, { backgroundColor: c.card, borderColor: c.cardBorder }, shadows.sm]}>
@@ -126,6 +143,16 @@ const HistoryCard = memo(function HistoryCard({
           <Text style={[styles.cardDate, { color: c.textTertiary }]}>Ended: {formatDate(item.ended_at)}</Text>
         )}
       </View>
+      {!!item.cell_id && (
+        <Pressable
+          onPress={() => onLocate(item.cell_id!)}
+          hitSlop={8}
+          style={({ pressed }) => [styles.locateButton, { opacity: pressed ? 0.6 : 1 }]}
+          accessibilityLabel="Locate on map"
+        >
+          <Ionicons name="map-outline" size={18} color={c.textTertiary} />
+        </Pressable>
+      )}
     </View>
   );
 });
@@ -156,9 +183,18 @@ export default function HistoryScreen() {
     setRefreshing(false);
   };
 
+  const locateOnMap = useCallback((cellId: string) => {
+    const cell = cellFromId(cellId);
+    if (!cell) return;
+    focusOnMap({ lat: cell.center.lat, lng: cell.center.lng });
+    router.push("/(tabs)");
+  }, []);
+
   const renderItem = useCallback(
-    ({ item }: { item: HistoryEntry }) => <HistoryCard item={item} c={c} />,
-    [c],
+    ({ item }: { item: HistoryEntry }) => (
+      <HistoryCard item={item} c={c} onLocate={locateOnMap} />
+    ),
+    [c, locateOnMap],
   );
 
   const filters: { key: FilterType; label: string }[] = [
@@ -272,6 +308,7 @@ const styles = StyleSheet.create({
   },
   thumbnail: { width: 60, height: 60, borderRadius: radii.sm, marginRight: spacing.md },
   cardInfo: { flex: 1, justifyContent: "center" },
+  locateButton: { alignSelf: "center", padding: spacing.sm },
   cardTop: { flexDirection: "row", alignItems: "center", gap: spacing.sm, marginBottom: 2 },
   cardStatus: { fontSize: fonts.sizes.base, fontWeight: fonts.weights.semibold },
   modeBadge: {

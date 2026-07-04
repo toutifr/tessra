@@ -16,6 +16,11 @@ import { useSquares, SquareWithImage } from "../../src/hooks/useSquares";
 import { getDailyTargets, DailyTarget } from "../../src/lib/economy";
 import { useSWR } from "../../src/lib/swr";
 import { onOptimisticUpload, type OptimisticUpload } from "../../src/lib/tileEvents";
+import {
+  consumePendingFocus,
+  subscribeMapFocus,
+  type MapFocusTarget,
+} from "../../src/lib/mapFocus";
 import { useAuth } from "../../src/providers/AuthProvider";
 import { useUserStats } from "../../src/hooks/useUserStats";
 import { getPlayfulMapStyle } from "../../src/lib/mapStyle";
@@ -283,6 +288,20 @@ export default function MapScreen() {
     return () => {
       mounted = false;
     };
+  }, []);
+
+  // "Locate on map" — événements envoyés depuis feed / sheet / historique / profil
+  useEffect(() => {
+    const applyFocus = (t: MapFocusTarget) => {
+      cameraRef.current?.setCamera({
+        centerCoordinate: [t.lng, t.lat],
+        zoomLevel: t.zoom ?? 14.5,
+        animationDuration: 700,
+      });
+    };
+    const pendingFocus = consumePendingFocus();
+    if (pendingFocus) applyFocus(pendingFocus);
+    return subscribeMapFocus(applyFocus);
   }, []);
 
   useEffect(() => {

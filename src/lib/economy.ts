@@ -100,6 +100,14 @@ export interface TeamChallenge {
   } | null;
 }
 
+export interface MyTile {
+  id: string;
+  cell_id: string;
+  lat: number;
+  lng: number;
+  last_price: number;
+}
+
 // ─── Helpers ──────────────────────────────────────────────
 
 /**
@@ -233,6 +241,31 @@ export async function listTeams(limit = 50): Promise<TeamRow[]> {
     .limit(limit);
   if (error) throw error;
   return (data ?? []) as TeamRow[];
+}
+
+/**
+ * Cases actives de l'utilisateur (mon "empire") — squares occupées
+ * jointes via ses publications actives.
+ */
+export async function getMyTiles(userId: string): Promise<MyTile[]> {
+  const { data, error } = await supabase
+    .from("publications")
+    .select("squares!inner(id, cell_id, lat, lng, last_price, status)")
+    .eq("user_id", userId)
+    .eq("status", "active")
+    .eq("squares.status", "occupe");
+  if (error) throw error;
+  const rows = (data ?? []) as unknown as { squares: MyTile | null }[];
+  return rows
+    .map((r) => r.squares)
+    .filter((s): s is MyTile => !!s && !!s.cell_id)
+    .map(({ id, cell_id, lat, lng, last_price }) => ({
+      id,
+      cell_id,
+      lat,
+      lng,
+      last_price: last_price ?? 0,
+    }));
 }
 
 export async function getBalance(userId: string): Promise<number> {

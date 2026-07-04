@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -14,8 +14,13 @@ import {
 import { router, useFocusEffect } from "expo-router";
 import { Image } from "expo-image";
 import * as ImagePicker from "expo-image-picker";
+import MapboxGL from "@rnmapbox/maps";
 import { supabase } from "../../src/lib/supabase";
-import { getTeamChallenge } from "../../src/lib/economy";
+import { getMyTiles, getTeamChallenge, MyTile } from "../../src/lib/economy";
+import { cellFromId } from "../../src/lib/kmGrid";
+import { focusOnMap } from "../../src/lib/mapFocus";
+import { getPlayfulMapStyle } from "../../src/lib/mapStyle";
+import { minTakePrice, tesselsToEur } from "../../src/constants/iap";
 import { useSWR, mutate, getCached } from "../../src/lib/swr";
 import { useAuth } from "../../src/providers/AuthProvider";
 import { useUserStats } from "../../src/hooks/useUserStats";
@@ -374,6 +379,9 @@ export default function ProfileScreen() {
         )}
       </View>
 
+      {/* Mon empire — minimap + valeur du portefeuille */}
+      {uid && <EmpireCard uid={uid} colors={c} />}
+
       {/* Stats Grid */}
       <View style={styles.statsGrid}>
         <StatCard value={stats.active_squares} label="Active" colors={c} />
@@ -468,6 +476,179 @@ export default function ProfileScreen() {
   );
 }
 
+function EmpireCard({ uid, colors: c }: { uid: string; colors: ThemeColors }) {
+  const { data: tiles, refresh } = useSWR<MyTile[]>(
+    `myTiles:${uid}`,
+    () => getMyTiles(uid),
+    60000,
+  );
+  const [styleJSON, setStyleJSON] = useState<string | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+    getPlayfulMapStyle().then((json) => {
+      if (mounted && json) setStyleJSON(json);
+    });
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      refresh();
+    }, [refresh]),
+  );
+
+  const geo = useMemo(() => {
+    if (!tiles || tiles.length === 0) return null;
+    const features: GeoJSON.Feature[] = [];
+    let minLat = Infinity;
+    let minLng = Infinity;
+    let maxLat = -Infinity;
+    let maxLng = -Infinity;
+    let sumLat = 0;
+    let sumLng = 0;
+    for (const t of tiles) {
+      const cell = cellFromId(t.cell_id);
+      const centerLat = cell?.center.lat ?? t.lat;
+      const centerLng = cell?.center.lng ?? t.lng;
+      sumLat += centerLat;
+      sumLng += centerLng;
+      if (cell) {
+        features.push({
+          type: "Feature",
+          properties: {},
+          geometry: {
+            type: "Polygon",
+            coordinates: [[
+              [cell.sw.lng, cell.sw.lat],
+              [cell.ne.lng, cell.sw.lat],
+              [cell.ne.lng, cell.ne.lat],
+              [cell.sw.lng, cell.ne.lat],
+              [cell.sw.lng, cell.sw.lat],
+            ]],
+          },
+        });
+        minLat = Math.min(minLat, cell.sw.lat);
+        maxLat = Math.max(maxLat, cell.ne.lat);
+        minLng = Math.min(minLng, cell.sw.lng);
+        maxLng = Math.max(maxLng, cell.ne.lng);
+      } else {
+        minLat = Math.min(minLat, centerLat);
+        maxLat = Math.max(maxLat, centerLat);
+        minLng = Math.min(minLng, centerLng);
+        maxLng = Math.max(maxLng, centerLng);
+      }
+    }
+    const collection: GeoJSON.FeatureCollection = {
+      type: "FeatureCollection",
+      features,
+    };
+    return {
+      collection,
+      bbox: { minLat, maxLat, minLng, maxLng },
+      centroid: { lat: sumLat / tiles.length, lng: sumLng / tiles.length },
+    };
+  }, [tiles]);
+
+  if (!tiles) return null;
+
+  // État vide — léger
+  if (tiles.length === 0 || !geo) {
+    return (
+      <View style={[styles.empireEmptyCard, { backgroundColor: c.card, borderColor: c.cardBorder }, shadows.sm]}>
+        <Text style={[styles.empireEmptyText, { color: c.textSecondary }]}>
+          No tiles yet — your empire starts with one claim
+        </Text>
+        <PressableScale
+          style={[styles.empireEmptyButton, { backgroundColor: c.primary }]}
+          onPress={() => router.push("/(tabs)")}
+        >
+          <Text style={[styles.empireEmptyButtonText, { color: c.primaryText }]}>
+            Open the map
+          </Text>
+        </PressableScale>
+      </View>
+    );
+  }
+
+  // Ce que ça coûterait à quelqu'un de tout te prendre
+  const portfolioValue = tiles.reduce((sum, t) => sum + minTakePrice(t.last_price), 0);
+  const span = Math.max(geo.bbox.maxLat - geo.bbox.minLat, geo.bbox.maxLng - geo.bbox.minLng);
+  const focusZoom = span > 0.2 ? 9 : span > 0.05 ? 11 : 13;
+
+  const handleOpenOnMap = () => {
+    focusOnMap({ lat: geo.centroid.lat, lng: geo.centroid.lng, zoom: focusZoom });
+    router.push("/(tabs)");
+  };
+
+  return (
+    <PressableScale
+      style={[styles.empireCard, { backgroundColor: c.card, borderColor: c.cardBorder }, shadows.sm]}
+      onPress={handleOpenOnMap}
+      accessibilityLabel="Open my empire on the map"
+    >
+      <View style={styles.empireHeader}>
+        <Text style={[styles.empireTitle, { color: c.text }]}>My empire</Text>
+        <Text style={[styles.empireCount, { color: c.textTertiary }]}>
+          {tiles.length} tile{tiles.length > 1 ? "s" : ""}
+        </Text>
+      </View>
+      <View style={styles.empireMapWrap} pointerEvents="none">
+        <MapboxGL.MapView
+          style={styles.empireMap}
+          styleURL={styleJSON ? undefined : MapboxGL.StyleURL.Dark}
+          styleJSON={styleJSON ?? undefined}
+          scrollEnabled={false}
+          zoomEnabled={false}
+          rotateEnabled={false}
+          pitchEnabled={false}
+          logoEnabled={false}
+          attributionEnabled={false}
+          scaleBarEnabled={false}
+        >
+          {tiles.length === 1 ? (
+            <MapboxGL.Camera
+              centerCoordinate={[geo.centroid.lng, geo.centroid.lat]}
+              zoomLevel={12}
+              animationDuration={0}
+            />
+          ) : (
+            <MapboxGL.Camera
+              bounds={{
+                ne: [geo.bbox.maxLng, geo.bbox.maxLat],
+                sw: [geo.bbox.minLng, geo.bbox.minLat],
+                paddingLeft: 24,
+                paddingRight: 24,
+                paddingTop: 24,
+                paddingBottom: 24,
+              }}
+              animationDuration={0}
+            />
+          )}
+          <MapboxGL.ShapeSource id="empire-tiles" shape={geo.collection}>
+            <MapboxGL.FillLayer
+              id="empire-tiles-fill"
+              style={{ fillColor: "#FFD700", fillOpacity: 0.25 }}
+            />
+            <MapboxGL.LineLayer
+              id="empire-tiles-outline"
+              style={{ lineColor: "#FFD700", lineWidth: 1.5 }}
+            />
+          </MapboxGL.ShapeSource>
+        </MapboxGL.MapView>
+        <View style={styles.empireValueRow}>
+          <Text style={styles.empireValueLabel}>Portfolio value</Text>
+          <Text style={styles.empireValueText}>
+            {portfolioValue} ⬡ · {tesselsToEur(portfolioValue)}
+          </Text>
+        </View>
+      </View>
+    </PressableScale>
+  );
+}
+
 function StatCard({ value, label, colors: c }: { value: number; label: string; colors: ThemeColors }) {
   return (
     <View style={[styles.statBox, { backgroundColor: c.card, borderColor: c.cardBorder }, shadows.sm]}>
@@ -533,6 +714,39 @@ const styles = StyleSheet.create({
     borderRadius: radii.md, paddingHorizontal: spacing.md, paddingVertical: spacing.xs,
   },
   streakText: { color: "#fff", fontWeight: fonts.weights.bold, fontSize: fonts.sizes.base },
+
+  empireCard: {
+    borderWidth: 1, borderRadius: radii.lg, padding: spacing.md,
+    marginBottom: spacing.lg,
+  },
+  empireHeader: {
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    marginBottom: spacing.sm,
+  },
+  empireTitle: { fontSize: fonts.sizes.base, fontWeight: fonts.weights.bold },
+  empireCount: { fontSize: fonts.sizes.sm, fontWeight: fonts.weights.semibold },
+  empireMapWrap: { borderRadius: radii.md, overflow: "hidden" },
+  empireMap: { height: 170 },
+  empireValueRow: {
+    position: "absolute", left: 0, right: 0, bottom: 0,
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    backgroundColor: "rgba(28, 28, 30, 0.85)",
+    paddingHorizontal: spacing.md, paddingVertical: spacing.sm,
+  },
+  empireValueLabel: {
+    color: "rgba(255,255,255,0.7)", fontSize: fonts.sizes.xs,
+    fontWeight: fonts.weights.semibold,
+  },
+  empireValueText: { color: "#FFD700", fontSize: fonts.sizes.sm, fontWeight: fonts.weights.bold },
+  empireEmptyCard: {
+    borderWidth: 1, borderRadius: radii.lg, padding: spacing.base,
+    marginBottom: spacing.lg, alignItems: "center", gap: spacing.md,
+  },
+  empireEmptyText: { fontSize: fonts.sizes.sm, textAlign: "center" },
+  empireEmptyButton: {
+    borderRadius: radii.full, paddingVertical: spacing.sm + 2, paddingHorizontal: spacing.xl,
+  },
+  empireEmptyButtonText: { fontSize: fonts.sizes.sm, fontWeight: fonts.weights.semibold },
 
   statsGrid: {
     flexDirection: "row", flexWrap: "wrap",

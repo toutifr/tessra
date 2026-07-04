@@ -27,6 +27,7 @@ import { useSWR } from "../../src/lib/swr";
 import { track } from "../../src/lib/track";
 import { hapticLight, hapticSuccess } from "../../src/lib/haptics";
 import { sectorLabel } from "../../src/lib/sector";
+import { focusOnMap } from "../../src/lib/mapFocus";
 import { useThemeColors, fonts, spacing, radii, shadows, palette } from "../../src/theme";
 
 /** Fraîcheur d'une case d'après sa dernière activité */
@@ -372,9 +373,22 @@ export default function SquareDetailScreen() {
 
       {/* 2. Secteur + statut + fraîcheur */}
       {square.cell_id ? (
-        <Text style={[styles.sectorText, { color: c.textTertiary }]}>
-          {sectorLabel(square.cell_id)}
-        </Text>
+        <View style={styles.sectorRow}>
+          <Text style={[styles.sectorText, { color: c.textTertiary }]}>
+            {sectorLabel(square.cell_id)}
+          </Text>
+          <Pressable
+            onPress={() => {
+              focusOnMap({ lat: square.lat, lng: square.lng });
+              router.push("/(tabs)");
+            }}
+            hitSlop={8}
+            style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
+            accessibilityLabel="Locate on map"
+          >
+            <Ionicons name="map-outline" size={16} color={c.textTertiary} />
+          </Pressable>
+        </View>
       ) : null}
       <View style={styles.statusRow}>
         <View style={[styles.statusBadge, { backgroundColor: c.bgTertiary }]}>
@@ -742,11 +756,16 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
 
+  sectorRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    paddingHorizontal: spacing.base,
+    marginBottom: spacing.sm,
+  },
   sectorText: {
     fontSize: fonts.sizes.sm,
     fontWeight: fonts.weights.semibold,
-    paddingHorizontal: spacing.base,
-    marginBottom: spacing.sm,
   },
   statusRow: {
     flexDirection: "row", alignItems: "center", justifyContent: "space-between",
