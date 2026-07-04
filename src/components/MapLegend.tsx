@@ -61,6 +61,10 @@ export default function MapLegend({
               text="Raid target: −30% takeover on site"
             />
             <Row
+              swatch={<TargetPin color={palette.grass} darkColor={palette.grassDark} icon="camera" done />}
+              text="Target completed — reward earned, come back tomorrow"
+            />
+            <Row
               swatch={
                 <View style={styles.fabSwatch}>
                   <Ionicons name="eye" size={15} color="#FFFFFF" />
