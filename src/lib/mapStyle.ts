@@ -101,7 +101,7 @@ const WORLD_BIOMES_LAYER = {
       "forest", FOREST_DEEP,
       LAND_BASE,
     ],
-    "fill-opacity": ["interpolate", ["linear"], ["zoom"], 5, 1, 7, 0],
+    "fill-opacity": 1,
     "fill-antialias": false,
   },
 } as StyleLayer;
