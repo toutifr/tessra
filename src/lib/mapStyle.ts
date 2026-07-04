@@ -62,19 +62,45 @@ export function classToBiome(clazz: string): BiomeKey | null {
   return CLASS_TO_BIOME[clazz] ?? null;
 }
 
-/** Fill data-driven pour les layers landcover/landuse du style far-zoom. */
+/** Fill data-driven pour les layers landcover/landuse du style far-zoom.
+ *  Contraste volontairement marqué entre les verts pour rester lisible dézoomé. */
 const TRANSPARENT = "rgba(0,0,0,0)";
+const FOREST_DEEP = "#2F4636"; // plus sombre que BIOMES.forest : lisible sur LAND_BASE
 const BIOME_FILL_MATCH: unknown[] = [
   "match",
   ["get", "class"],
-  "wood", BIOMES.forest[1],
+  "wood", FOREST_DEEP,
   ["snow", "glacier"], BIOMES.snow[1],
   ["sand", "desert", "beach"], BIOMES.sand[1],
-  ["grass", "scrub", "crop", "park"], LAND_BASE,
+  ["grass", "park"], LAND_SHADES[2],
+  ["scrub", "crop"], LAND_SHADES[0],
   ["residential", "commercial_area", "industrial", "airport", "parking"], BIOMES.urban[1],
   ["rock", "bare"], BIOMES.rock[1],
   TRANSPARENT, // classe inconnue → laisse le fond terre visible
 ];
+
+/** Biomes monde embarqués (Natural Earth simplifié) — comble les trous des
+ *  données Mapbox au zoom lointain (déserts/glaces/toundra absents < z5).
+ *  Inséré SOUS landcover/landuse/water : ne recouvre jamais les vraies données.
+ *  Fondu z5→z6.5 (au-delà, les données Mapbox suffisent). */
+const WORLD_BIOMES = require("../assets/worldBiomes.json") as GeoJSON.FeatureCollection;
+const WORLD_BIOMES_LAYER = {
+  id: "world-biomes-fill",
+  type: "fill",
+  source: "world-biomes",
+  paint: {
+    "fill-color": [
+      "match", ["get", "biome"],
+      "sand", BIOMES.sand[1],
+      "snow", BIOMES.snow[1],
+      "rock", BIOMES.rock[1],
+      "forest", FOREST_DEEP,
+      LAND_BASE,
+    ],
+    "fill-opacity": ["interpolate", ["linear"], ["zoom"], 5, 1, 6.5, 0],
+    "fill-antialias": false,
+  },
+} as StyleLayer;
 
 /** IDs des layers water conservés dans le style (pour queryRenderedFeaturesInRect) */
 let waterLayerIds: string[] = ["water"];
@@ -102,7 +128,10 @@ export async function getPlayfulMapStyle(): Promise<string | null> {
     try {
       const res = await fetch(STYLE_URL);
       if (!res.ok) return null;
-      const style = (await res.json()) as { layers?: StyleLayer[] };
+      const style = (await res.json()) as {
+        layers?: StyleLayer[];
+        sources?: Record<string, unknown>;
+      };
 
       const kept: StyleLayer[] = [];
       const keptWaterIds: string[] = [];
@@ -155,6 +184,14 @@ export async function getPlayfulMapStyle(): Promise<string | null> {
           paint: { "background-color": LAND_BASE },
         });
       }
+
+      // Couche biomes monde : juste après le background, sous tout le reste
+      style.sources = {
+        ...(style.sources ?? {}),
+        "world-biomes": { type: "geojson", data: WORLD_BIOMES },
+      };
+      const bgIdx = kept.findIndex((l) => l.type === "background");
+      kept.splice(bgIdx + 1, 0, WORLD_BIOMES_LAYER);
 
       if (keptWaterIds.length > 0) waterLayerIds = keptWaterIds;
       style.layers = kept;
