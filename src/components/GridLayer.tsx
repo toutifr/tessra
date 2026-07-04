@@ -1,8 +1,9 @@
 /**
  * GridLayer — 1km × 1km grid drawn directly on the map.
  *
- * Rendered BELOW the Mapbox "water" layer so the grid naturally
- * disappears under oceans and appears only on land.
+ * Rendered ABOVE the land-cell fill (JSX order) : lignes sombres
+ * fines qui se lisent comme des jointures de blocs sur l'herbe.
+ * Quasi invisibles sur l'océan deepslate — pas besoin de clipping.
  *
  * Uses cellsInBounds() — same math as photo placement.
  * Updates in real-time via onCameraChanged.
@@ -130,17 +131,16 @@ export default function GridLayer({ bounds, zoom }: GridLayerProps) {
     <MapboxGL.ShapeSource id="grid-cells" shape={gridGeoJSON}>
       <MapboxGL.LineLayer
         id="grid-border-layer"
-        belowLayerID="water"
         style={{
-          lineColor: "rgba(255, 255, 255, 1)",
+          lineColor: "#000000",
           lineOpacity: [
             "interpolate", ["linear"], ["zoom"],
-            6, 0.1,
-            8, 0.2,
-            10, 0.3,
-            12, 0.4,
-            14, 0.5,
-            16, 0.6,
+            6, 0.06,
+            8, 0.1,
+            10, 0.13,
+            12, 0.16,
+            14, 0.18,
+            16, 0.22,
           ] as any,
           lineWidth: [
             "interpolate", ["linear"], ["zoom"],

@@ -5,7 +5,8 @@ import { Ionicons } from "@expo/vector-icons";
 import * as Location from "expo-location";
 import { router } from "expo-router";
 import { MAPBOX_ACCESS_TOKEN } from "../../src/constants/config";
-import { cellAt, cellFromId } from "../../src/lib/kmGrid";
+import { cellAt, cellFromId, cellsInBounds } from "../../src/lib/kmGrid";
+import { isPointInWater } from "../../src/lib/waterFilter";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import GridLayer from "../../src/components/GridLayer";
 import TileLayer from "../../src/components/TileLayer";
@@ -23,7 +24,7 @@ import {
 } from "../../src/lib/mapFocus";
 import { useAuth } from "../../src/providers/AuthProvider";
 import { useUserStats } from "../../src/hooks/useUserStats";
-import { getPlayfulMapStyle } from "../../src/lib/mapStyle";
+import { getPlayfulMapStyle, getWaterLayerIds, LAND_SHADES } from "../../src/lib/mapStyle";
 import { supabase } from "../../src/lib/supabase";
 import { minTakePrice } from "../../src/constants/iap";
 import { palette, radii } from "../../src/theme";
@@ -38,6 +39,12 @@ const REVIVE_WINDOW_MS = 20 * 60 * 60 * 1000;
 
 // First-run hint — shown at most once per app session
 let mapHintShownThisSession = false;
+
+// Terre en cellules entières (côtes en escalier) — actif à partir de ce zoom.
+// En dessous, les cellules sont sub-pixel : le style plat à deux couleurs suffit.
+const LAND_CELLS_MIN_ZOOM = 10;
+const LAND_CELLS_MAX = 2500;
+const EMPTY_FC: GeoJSON.FeatureCollection = { type: "FeatureCollection", features: [] };
 
 function cellPolygonFeature(cellId: string): GeoJSON.Feature | null {
   const cell = cellFromId(cellId);
@@ -326,13 +333,104 @@ export default function MapScreen() {
     [],
   );
 
+  // ─── Terre en cellules entières — côtes en escalier (zoom ≥ 10) ───
+  // Classification terre/eau par cellule : une requête native water par idle,
+  // puis point-in-polygon côté JS. Memoizé par clé de viewport.
+  const [landCellsGeoJSON, setLandCellsGeoJSON] = useState<GeoJSON.FeatureCollection>(EMPTY_FC);
+  const landKeyRef = useRef<string | null>(null);
+
+  const classifyLandCells = useCallback(
+    async (
+      sw: { lat: number; lng: number },
+      ne: { lat: number; lng: number },
+      zoom: number,
+    ) => {
+      try {
+        if (zoom < LAND_CELLS_MIN_ZOOM) {
+          if (landKeyRef.current !== null) {
+            landKeyRef.current = null;
+            setLandCellsGeoJSON(EMPTY_FC);
+          }
+          return;
+        }
+        const key = [
+          sw.lat.toFixed(3), sw.lng.toFixed(3),
+          ne.lat.toFixed(3), ne.lng.toFixed(3),
+        ].join(",");
+        if (landKeyRef.current === key) return;
+
+        // Buffer 30% pour éviter les trous en bord d'écran pendant le pan
+        const latPad = (ne.lat - sw.lat) * 0.3;
+        const lngPad = (ne.lng - sw.lng) * 0.3;
+        const cells = cellsInBounds(
+          { lat: sw.lat - latPad, lng: sw.lng - lngPad },
+          { lat: ne.lat + latPad, lng: ne.lng + lngPad },
+          LAND_CELLS_MAX,
+        );
+        if (cells.length === 0) {
+          // Trop de cellules (garde-fou) — on laisse le style plat
+          landKeyRef.current = key;
+          setLandCellsGeoJSON(EMPTY_FC);
+          return;
+        }
+
+        const map = mapViewRef.current;
+        if (!map) return;
+
+        // 1) Géométrie water depuis les vector tiles chargées (précis, un seul call)
+        let water: GeoJSON.Feature[] = [];
+        try {
+          const fc = await map.querySourceFeatures("composite", undefined, ["water"]);
+          water = fc?.features ?? [];
+        } catch {
+          // API indisponible → fallback rendered features
+        }
+        if (water.length === 0) {
+          try {
+            const fc = await map.queryRenderedFeaturesInRect([], undefined, getWaterLayerIds());
+            water = fc?.features ?? [];
+          } catch {
+            // Pas de query possible → tout est terre (style plat déjà correct)
+          }
+        }
+
+        const features: GeoJSON.Feature[] = [];
+        for (const cell of cells) {
+          if (isPointInWater([cell.center.lng, cell.center.lat], water)) continue;
+          // Teinte déterministe par cellule (hash row/col)
+          const shade = (((cell.row * 73856093) ^ (cell.col * 19349663)) >>> 0) % 3;
+          features.push({
+            type: "Feature",
+            properties: { shade },
+            geometry: {
+              type: "Polygon",
+              coordinates: [[
+                [cell.sw.lng, cell.sw.lat],
+                [cell.ne.lng, cell.sw.lat],
+                [cell.ne.lng, cell.ne.lat],
+                [cell.sw.lng, cell.ne.lat],
+                [cell.sw.lng, cell.sw.lat],
+              ]],
+            },
+          });
+        }
+        landKeyRef.current = key;
+        setLandCellsGeoJSON({ type: "FeatureCollection", features });
+      } catch {
+        // Dégradation gracieuse : on garde l'état précédent, le style plat assure le rendu
+      }
+    },
+    [],
+  );
+
   // Heavy data fetching only after map stops moving
   const handleMapIdle = useCallback(
     (state: MapboxGL.MapState) => {
       const { bounds: mapBounds, zoom } = state.properties;
-      if (mapBounds && zoom >= 9) {
-        const ne = { lat: mapBounds.ne[1], lng: mapBounds.ne[0] };
-        const sw = { lat: mapBounds.sw[1], lng: mapBounds.sw[0] };
+      if (!mapBounds) return;
+      const ne = { lat: mapBounds.ne[1], lng: mapBounds.ne[0] };
+      const sw = { lat: mapBounds.sw[1], lng: mapBounds.sw[0] };
+      if (zoom >= 9) {
         const latPad = (ne.lat - sw.lat) * 0.5;
         const lngPad = (ne.lng - sw.lng) * 0.5;
         fetchSquaresInViewport({
@@ -340,8 +438,9 @@ export default function MapScreen() {
           sw: { lat: sw.lat - latPad, lng: sw.lng - lngPad },
         });
       }
+      classifyLandCells(sw, ne, zoom);
     },
-    [fetchSquaresInViewport],
+    [fetchSquaresInViewport, classifyLandCells],
   );
 
   const handleMapPress = useCallback(
@@ -453,6 +552,24 @@ export default function MapScreen() {
           zoomLevel={DEFAULT_ZOOM}
           centerCoordinate={center}
         />
+
+        {/* Terre en cellules 1km² entières — côtes en escalier (zoom ≥ 10).
+            Au-dessus du water du style, en dessous des photos/grille/outlines
+            (ordre JSX). Teinte déterministe par cellule via `shade`. */}
+        <MapboxGL.ShapeSource id="land-cells" shape={landCellsGeoJSON}>
+          <MapboxGL.FillLayer
+            id="land-cells-fill"
+            style={{
+              fillColor: [
+                "match", ["get", "shade"],
+                0, LAND_SHADES[0],
+                1, LAND_SHADES[1],
+                LAND_SHADES[2],
+              ] as any,
+              fillOpacity: 1,
+            }}
+          />
+        </MapboxGL.ShapeSource>
 
         {/* Photos rendues dans les tuiles — visibles à TOUS les zooms */}
         <TileLayer />
