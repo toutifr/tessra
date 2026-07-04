@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, useMemo } from "react";
-import { StyleSheet, View } from "react-native";
+import { Pressable, StyleSheet, View } from "react-native";
 import MapboxGL from "@rnmapbox/maps";
+import { Ionicons } from "@expo/vector-icons";
 import * as Location from "expo-location";
 import { router } from "expo-router";
 import { MAPBOX_ACCESS_TOKEN } from "../../src/constants/config";
@@ -205,6 +206,9 @@ export default function MapScreen() {
         styleURL={styleJSON ? undefined : MapboxGL.StyleURL.Dark}
         styleJSON={styleJSON ?? undefined}
         projection="globe"
+        logoEnabled={false}
+        attributionEnabled={false}
+        scaleBarEnabled={false}
         onCameraChanged={handleCameraChanged}
         onMapIdle={handleMapIdle}
         onPress={handleMapPress}
@@ -305,6 +309,26 @@ export default function MapScreen() {
       <View style={[styles.rushOverlay, { top: insets.top + 8 }]} pointerEvents="none">
         <RushBanner />
       </View>
+
+      {/* FAB : recentrer sur ma position */}
+      {userLocation && (
+        <Pressable
+          style={({ pressed }) => [
+            styles.locateFab,
+            { bottom: insets.bottom + 24, opacity: pressed ? 0.8 : 1 },
+          ]}
+          onPress={() => {
+            cameraRef.current?.setCamera({
+              centerCoordinate: userLocation,
+              zoomLevel: DEFAULT_ZOOM,
+              animationDuration: 600,
+            });
+          }}
+          accessibilityLabel="Center on my position"
+        >
+          <Ionicons name="locate" size={22} color="#FFFFFF" />
+        </Pressable>
+      )}
     </View>
   );
 }
@@ -334,4 +358,21 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   map: { flex: 1 },
   rushOverlay: { position: "absolute", left: 12, right: 12 },
+  locateFab: {
+    position: "absolute",
+    right: 16,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: "rgba(28, 28, 30, 0.92)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.15)",
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#000",
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 6,
+  },
 });
