@@ -5,8 +5,7 @@ import { Ionicons } from "@expo/vector-icons";
 import * as Location from "expo-location";
 import { router } from "expo-router";
 import { MAPBOX_ACCESS_TOKEN } from "../../src/constants/config";
-import { cellAt, cellFromId, cellsInBounds } from "../../src/lib/kmGrid";
-import { isPointInWater, pointInFeature } from "../../src/lib/waterFilter";
+import { cellAt, cellFromId } from "../../src/lib/kmGrid";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import GridLayer from "../../src/components/GridLayer";
 import TileLayer from "../../src/components/TileLayer";
@@ -24,13 +23,7 @@ import {
 } from "../../src/lib/mapFocus";
 import { useAuth } from "../../src/providers/AuthProvider";
 import { useUserStats } from "../../src/hooks/useUserStats";
-import {
-  getPlayfulMapStyle,
-  getWaterLayerIds,
-  BIOMES,
-  classToBiome,
-  type BiomeKey,
-} from "../../src/lib/mapStyle";
+import { getPlayfulMapStyle } from "../../src/lib/mapStyle";
 import { supabase } from "../../src/lib/supabase";
 import { minTakePrice } from "../../src/constants/iap";
 import { palette, radii } from "../../src/theme";
@@ -45,61 +38,6 @@ const REVIVE_WINDOW_MS = 20 * 60 * 60 * 1000;
 
 // First-run hint — shown at most once per app session
 let mapHintShownThisSession = false;
-
-// Terre en cellules entières (côtes en escalier) — actif à partir de ce zoom.
-// En dessous, les cellules sont sub-pixel : le style plat à deux couleurs suffit.
-const LAND_CELLS_MIN_ZOOM = 10;
-const LAND_CELLS_MAX = 2500;
-const EMPTY_FC: GeoJSON.FeatureCollection = { type: "FeatureCollection", features: [] };
-
-// ─── Biomes par cellule ───
-// Priorité de classification (plus petit = gagne) : neige > sable > forêt > urbain > roche.
-const BIOME_PRIORITY: Record<BiomeKey, number> = {
-  snow: 0, sand: 1, forest: 2, urban: 3, rock: 4, grass: 5,
-};
-// Garde-fou perf : au-delà, on ne teste que les N plus grandes features (bbox)
-const BIOME_FEATURES_MAX = 1500;
-
-type BiomeCandidate = {
-  bbox: [number, number, number, number]; // minLng, minLat, maxLng, maxLat
-  area: number;
-  priority: number;
-  biome: BiomeKey;
-  feature: GeoJSON.Feature;
-};
-
-/** Bbox d'une géométrie Polygon/MultiPolygon (une passe, pour rejet rapide) */
-function polygonBbox(geom: GeoJSON.Geometry): [number, number, number, number] | null {
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-  const scanRings = (rings: number[][][]) => {
-    for (const ring of rings) {
-      for (const p of ring) {
-        if (p[0] < minX) minX = p[0];
-        if (p[0] > maxX) maxX = p[0];
-        if (p[1] < minY) minY = p[1];
-        if (p[1] > maxY) maxY = p[1];
-      }
-    }
-  };
-  if (geom.type === "Polygon") scanRings((geom as GeoJSON.Polygon).coordinates);
-  else if (geom.type === "MultiPolygon") {
-    for (const poly of (geom as GeoJSON.MultiPolygon).coordinates) scanRings(poly);
-  } else return null;
-  return minX === Infinity ? null : [minX, minY, maxX, maxY];
-}
-
-// fill-color data-driven : match sur "biome-shade" → 18 combos, défaut = grass[0]
-const CELL_FILL_COLOR = (() => {
-  const expr: unknown[] = [
-    "match",
-    ["concat", ["get", "biome"], "-", ["to-string", ["get", "shade"]]],
-  ];
-  for (const key of Object.keys(BIOMES) as BiomeKey[]) {
-    BIOMES[key].forEach((color, i) => expr.push(`${key}-${i}`, color));
-  }
-  expr.push(BIOMES.grass[0]);
-  return expr;
-})();
 
 function cellPolygonFeature(cellId: string): GeoJSON.Feature | null {
   const cell = cellFromId(cellId);
@@ -388,142 +326,6 @@ export default function MapScreen() {
     [],
   );
 
-  // ─── Terre en cellules entières — côtes en escalier (zoom ≥ 10) ───
-  // Classification terre/eau par cellule : une requête native water par idle,
-  // puis point-in-polygon côté JS. Memoizé par clé de viewport.
-  const [landCellsGeoJSON, setLandCellsGeoJSON] = useState<GeoJSON.FeatureCollection>(EMPTY_FC);
-  const landKeyRef = useRef<string | null>(null);
-
-  const classifyLandCells = useCallback(
-    async (
-      sw: { lat: number; lng: number },
-      ne: { lat: number; lng: number },
-      zoom: number,
-    ) => {
-      try {
-        if (zoom < LAND_CELLS_MIN_ZOOM) {
-          if (landKeyRef.current !== null) {
-            landKeyRef.current = null;
-            setLandCellsGeoJSON(EMPTY_FC);
-          }
-          return;
-        }
-        const key = [
-          sw.lat.toFixed(3), sw.lng.toFixed(3),
-          ne.lat.toFixed(3), ne.lng.toFixed(3),
-        ].join(",");
-        if (landKeyRef.current === key) return;
-
-        // Buffer 30% pour éviter les trous en bord d'écran pendant le pan
-        const latPad = (ne.lat - sw.lat) * 0.3;
-        const lngPad = (ne.lng - sw.lng) * 0.3;
-        const cells = cellsInBounds(
-          { lat: sw.lat - latPad, lng: sw.lng - lngPad },
-          { lat: ne.lat + latPad, lng: ne.lng + lngPad },
-          LAND_CELLS_MAX,
-        );
-        if (cells.length === 0) {
-          // Trop de cellules (garde-fou) — on laisse le style plat
-          landKeyRef.current = key;
-          setLandCellsGeoJSON(EMPTY_FC);
-          return;
-        }
-
-        const map = mapViewRef.current;
-        if (!map) return;
-
-        // 1) Géométrie water depuis les vector tiles chargées (précis, un seul call)
-        let water: GeoJSON.Feature[] = [];
-        try {
-          const fc = await map.querySourceFeatures("composite", undefined, ["water"]);
-          water = fc?.features ?? [];
-        } catch {
-          // API indisponible → fallback rendered features
-        }
-        if (water.length === 0) {
-          try {
-            const fc = await map.queryRenderedFeaturesInRect([], undefined, getWaterLayerIds());
-            water = fc?.features ?? [];
-          } catch {
-            // Pas de query possible → tout est terre (style plat déjà correct)
-          }
-        }
-
-        // 2) Landcover + landuse → candidats biome avec bbox précalculée.
-        //    landcover d'abord (tiebreak à priorité égale). Vide/erreur = ok.
-        let candidates: BiomeCandidate[] = [];
-        for (const sourceLayer of ["landcover", "landuse"] as const) {
-          try {
-            const fc = await map.querySourceFeatures("composite", undefined, [sourceLayer]);
-            for (const f of fc?.features ?? []) {
-              const clazz = (f.properties as { class?: unknown } | null)?.class;
-              const biome = typeof clazz === "string" ? classToBiome(clazz) : null;
-              if (!biome) continue;
-              const bbox = polygonBbox(f.geometry);
-              if (!bbox) continue;
-              candidates.push({
-                bbox,
-                area: (bbox[2] - bbox[0]) * (bbox[3] - bbox[1]),
-                priority: BIOME_PRIORITY[biome],
-                biome,
-                feature: f,
-              });
-            }
-          } catch {
-            // Source layer indisponible → biomes partiels, herbe par défaut
-          }
-        }
-        // Garde-fou perf : ne garder que les plus grandes features
-        if (candidates.length > BIOME_FEATURES_MAX) {
-          candidates.sort((a, b) => b.area - a.area);
-          candidates = candidates.slice(0, BIOME_FEATURES_MAX);
-        }
-        // Tri par priorité (stable → landcover avant landuse à priorité égale) :
-        // le premier hit est le meilleur, on peut break.
-        candidates.sort((a, b) => a.priority - b.priority);
-
-        const features: GeoJSON.Feature[] = [];
-        for (const cell of cells) {
-          const pt: [number, number] = [cell.center.lng, cell.center.lat];
-          if (isPointInWater(pt, water)) continue;
-          // Biome : bbox-reject rapide puis ray-cast ; premier match = gagnant
-          let biome: BiomeKey = "grass";
-          for (const c of candidates) {
-            if (
-              pt[0] < c.bbox[0] || pt[0] > c.bbox[2] ||
-              pt[1] < c.bbox[1] || pt[1] > c.bbox[3]
-            ) continue;
-            if (pointInFeature(pt, c.feature)) {
-              biome = c.biome;
-              break;
-            }
-          }
-          // Teinte déterministe par cellule (hash row/col)
-          const shade = (((cell.row * 73856093) ^ (cell.col * 19349663)) >>> 0) % 3;
-          features.push({
-            type: "Feature",
-            properties: { biome, shade },
-            geometry: {
-              type: "Polygon",
-              coordinates: [[
-                [cell.sw.lng, cell.sw.lat],
-                [cell.ne.lng, cell.sw.lat],
-                [cell.ne.lng, cell.ne.lat],
-                [cell.sw.lng, cell.ne.lat],
-                [cell.sw.lng, cell.sw.lat],
-              ]],
-            },
-          });
-        }
-        landKeyRef.current = key;
-        setLandCellsGeoJSON({ type: "FeatureCollection", features });
-      } catch {
-        // Dégradation gracieuse : on garde l'état précédent, le style plat assure le rendu
-      }
-    },
-    [],
-  );
-
   // Heavy data fetching only after map stops moving
   const handleMapIdle = useCallback(
     (state: MapboxGL.MapState) => {
@@ -539,9 +341,8 @@ export default function MapScreen() {
           sw: { lat: sw.lat - latPad, lng: sw.lng - lngPad },
         });
       }
-      classifyLandCells(sw, ne, zoom);
     },
-    [fetchSquaresInViewport, classifyLandCells],
+    [fetchSquaresInViewport],
   );
 
   const handleMapPress = useCallback(
@@ -653,19 +454,6 @@ export default function MapScreen() {
           zoomLevel={DEFAULT_ZOOM}
           centerCoordinate={center}
         />
-
-        {/* Terre en cellules 1km² entières — côtes en escalier (zoom ≥ 10).
-            Au-dessus du water du style, en dessous des photos/grille/outlines
-            (ordre JSX). Teinte déterministe par cellule via `shade`. */}
-        <MapboxGL.ShapeSource id="land-cells" shape={landCellsGeoJSON}>
-          <MapboxGL.FillLayer
-            id="land-cells-fill"
-            style={{
-              fillColor: CELL_FILL_COLOR as any,
-              fillOpacity: 1,
-            }}
-          />
-        </MapboxGL.ShapeSource>
 
         {/* Photos rendues dans les tuiles — visibles à TOUS les zooms */}
         <TileLayer />

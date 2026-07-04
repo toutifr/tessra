@@ -69,6 +69,78 @@ export function cellFromId(id: string): GridCell | null {
   };
 }
 
+/** Bloc LOD : `factor` × `factor` cellules 1km, aligné sur les multiples de factor */
+export interface GridBlock {
+  /** Base (south-west) cell row — multiple of factor */
+  row: number;
+  /** Base (south-west) cell col — multiple of factor */
+  col: number;
+  sw: { lat: number; lng: number };
+  ne: { lat: number; lng: number };
+  center: { lat: number; lng: number };
+}
+
+/**
+ * Bounds of a LOD block spanning `factor` cells per side, anchored at (rowStart, colStart).
+ * The column step of the BASE row is used for the whole block: all blocks of the same
+ * block-row band share the same base row, so they tile seamlessly in longitude.
+ */
+export function blockBounds(rowStart: number, colStart: number, factor: number): GridBlock {
+  const baseLat = rowStart * KM_LAT;
+  const step = kmLng(baseLat);
+  const swLat = baseLat;
+  const swLng = colStart * step;
+  const h = factor * KM_LAT;
+  const w = factor * step;
+  return {
+    row: rowStart,
+    col: colStart,
+    sw: { lat: swLat, lng: swLng },
+    ne: { lat: swLat + h, lng: swLng + w },
+    center: { lat: swLat + h / 2, lng: swLng + w / 2 },
+  };
+}
+
+/**
+ * Enumerate all LOD blocks (factor × factor cells) intersecting a bounding box.
+ * Blocks are aligned on row/col multiples of factor. Returns [] if the count
+ * would exceed maxBlocks (perf safeguard — caller can retry with a bigger factor).
+ */
+export function blocksInBounds(
+  sw: { lat: number; lng: number },
+  ne: { lat: number; lng: number },
+  factor: number,
+  maxBlocks: number = 1200,
+): GridBlock[] {
+  const mod = (n: number, m: number) => ((n % m) + m) % m;
+
+  const minRowRaw = Math.floor(sw.lat / KM_LAT);
+  const minRow = minRowRaw - mod(minRowRaw, factor);
+  const maxRow = Math.floor(ne.lat / KM_LAT);
+  if (maxRow < minRow) return [];
+
+  // Quick estimate before generating anything
+  const midLat = (sw.lat + ne.lat) / 2;
+  const midStep = kmLng(midLat) * factor;
+  const estCols = Math.ceil((ne.lng - sw.lng) / midStep) + 2;
+  const estRows = Math.ceil((maxRow - minRow + 1) / factor) + 1;
+  if (estRows * estCols > maxBlocks) return [];
+
+  const blocks: GridBlock[] = [];
+  for (let r = minRow; r <= maxRow; r += factor) {
+    const step = kmLng(r * KM_LAT);
+    const minColRaw = Math.floor(sw.lng / step);
+    const minCol = minColRaw - mod(minColRaw, factor);
+    const maxCol = Math.floor(ne.lng / step);
+    for (let c = minCol; c <= maxCol; c += factor) {
+      blocks.push(blockBounds(r, c, factor));
+      // Hard stop: mid-lat estimate can undershoot on tall viewports
+      if (blocks.length > maxBlocks) return [];
+    }
+  }
+  return blocks;
+}
+
 /**
  * Generate all 1km × 1km cells that intersect a bounding box.
  * Returns empty array if cell count would exceed maxCells (perf safeguard).
