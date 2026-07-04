@@ -14,7 +14,7 @@ const sections: Section[] = [
     icon: "map-outline",
     title: "The mosaic",
     body:
-      "Earth is split into 1 km² tiles. Each tile holds ONE photo. To claim a tile, you must physically be there. The world map becomes a living mosaic of everyone's photos.",
+      "Earth is split into 1 km² tiles — land AND ocean. Each tile holds ONE photo. To claim a tile, you must physically be there: cities, summits, or the middle of the sea if you sail it. The world map becomes a living mosaic of everyone's photos.",
   },
   {
     icon: null,
