@@ -8,11 +8,11 @@ export interface TesselPack {
 }
 
 export const TESSEL_PACKS: TesselPack[] = [
-  { sku: "tessra_tessels_s", tessels: 300, priceLabel: "€2.99" },
-  { sku: "tessra_tessels_m", tessels: 1200, priceLabel: "€9.99" },
-  { sku: "tessra_tessels_l", tessels: 2800, priceLabel: "€19.99" },
-  { sku: "tessra_tessels_xl", tessels: 8000, priceLabel: "€49.99" },
-  { sku: "tessra_tessels_xxl", tessels: 18000, priceLabel: "€99.99" },
+  { sku: "piri_reis_s", tessels: 300, priceLabel: "€2.99" },
+  { sku: "piri_reis_m", tessels: 1200, priceLabel: "€9.99" },
+  { sku: "piri_reis_l", tessels: 2800, priceLabel: "€19.99" },
+  { sku: "piri_reis_xl", tessels: 8000, priceLabel: "€49.99" },
+  { sku: "piri_reis_xxl", tessels: 18000, priceLabel: "€99.99" },
 ];
 
 export const IAP_SKUS: string[] = TESSEL_PACKS.map((p) => p.sku);

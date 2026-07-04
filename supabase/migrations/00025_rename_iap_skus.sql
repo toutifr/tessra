@@ -1,0 +1,4 @@
+-- SKUs IAP renommés avant création chez Apple (IDs immuables) :
+-- tessra_tessels_* → piri_reis_* (s/m/l/xl/xxl).
+-- grant_tessels recréé avec les nouveaux SKUs (montants/prix inchangés).
+-- Appliqué en live "rename_iap_skus_piri_reis". SQL complet dans l'historique Supabase.

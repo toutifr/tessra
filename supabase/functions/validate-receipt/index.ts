@@ -4,11 +4,11 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const VALID_SKUS = new Set([
-  "tessra_tessels_s",
-  "tessra_tessels_m",
-  "tessra_tessels_l",
-  "tessra_tessels_xl",
-  "tessra_tessels_xxl",
+  "piri_reis_s",
+  "piri_reis_m",
+  "piri_reis_l",
+  "piri_reis_xl",
+  "piri_reis_xxl",
 ]);
 
 Deno.serve(async (req) => {
