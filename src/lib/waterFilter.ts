@@ -33,20 +33,27 @@ function pointInPolygon(pt: Point, coords: number[][][]): boolean {
   return true;
 }
 
+/** Generic point-in-feature (Polygon / MultiPolygon, holes handled) */
+export function pointInFeature(pt: Point, feature: GeoJSON.Feature): boolean {
+  const geom = feature.geometry;
+  if (geom.type === "Polygon") {
+    return pointInPolygon(pt, (geom as GeoJSON.Polygon).coordinates);
+  }
+  if (geom.type === "MultiPolygon") {
+    for (const poly of (geom as GeoJSON.MultiPolygon).coordinates) {
+      if (pointInPolygon(pt, poly)) return true;
+    }
+  }
+  return false;
+}
+
 /** Check if a point is inside any of the water features */
 export function isPointInWater(
   pt: Point,
   waterFeatures: GeoJSON.Feature[],
 ): boolean {
   for (const f of waterFeatures) {
-    const geom = f.geometry;
-    if (geom.type === "Polygon") {
-      if (pointInPolygon(pt, (geom as GeoJSON.Polygon).coordinates)) return true;
-    } else if (geom.type === "MultiPolygon") {
-      for (const poly of (geom as GeoJSON.MultiPolygon).coordinates) {
-        if (pointInPolygon(pt, poly)) return true;
-      }
-    }
+    if (pointInFeature(pt, f)) return true;
   }
   return false;
 }

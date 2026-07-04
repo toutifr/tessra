@@ -6,7 +6,7 @@ import * as Location from "expo-location";
 import { router } from "expo-router";
 import { MAPBOX_ACCESS_TOKEN } from "../../src/constants/config";
 import { cellAt, cellFromId, cellsInBounds } from "../../src/lib/kmGrid";
-import { isPointInWater } from "../../src/lib/waterFilter";
+import { isPointInWater, pointInFeature } from "../../src/lib/waterFilter";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import GridLayer from "../../src/components/GridLayer";
 import TileLayer from "../../src/components/TileLayer";
@@ -24,7 +24,13 @@ import {
 } from "../../src/lib/mapFocus";
 import { useAuth } from "../../src/providers/AuthProvider";
 import { useUserStats } from "../../src/hooks/useUserStats";
-import { getPlayfulMapStyle, getWaterLayerIds, LAND_SHADES } from "../../src/lib/mapStyle";
+import {
+  getPlayfulMapStyle,
+  getWaterLayerIds,
+  BIOMES,
+  classToBiome,
+  type BiomeKey,
+} from "../../src/lib/mapStyle";
 import { supabase } from "../../src/lib/supabase";
 import { minTakePrice } from "../../src/constants/iap";
 import { palette, radii } from "../../src/theme";
@@ -45,6 +51,55 @@ let mapHintShownThisSession = false;
 const LAND_CELLS_MIN_ZOOM = 10;
 const LAND_CELLS_MAX = 2500;
 const EMPTY_FC: GeoJSON.FeatureCollection = { type: "FeatureCollection", features: [] };
+
+// ─── Biomes par cellule ───
+// Priorité de classification (plus petit = gagne) : neige > sable > forêt > urbain > roche.
+const BIOME_PRIORITY: Record<BiomeKey, number> = {
+  snow: 0, sand: 1, forest: 2, urban: 3, rock: 4, grass: 5,
+};
+// Garde-fou perf : au-delà, on ne teste que les N plus grandes features (bbox)
+const BIOME_FEATURES_MAX = 1500;
+
+type BiomeCandidate = {
+  bbox: [number, number, number, number]; // minLng, minLat, maxLng, maxLat
+  area: number;
+  priority: number;
+  biome: BiomeKey;
+  feature: GeoJSON.Feature;
+};
+
+/** Bbox d'une géométrie Polygon/MultiPolygon (une passe, pour rejet rapide) */
+function polygonBbox(geom: GeoJSON.Geometry): [number, number, number, number] | null {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  const scanRings = (rings: number[][][]) => {
+    for (const ring of rings) {
+      for (const p of ring) {
+        if (p[0] < minX) minX = p[0];
+        if (p[0] > maxX) maxX = p[0];
+        if (p[1] < minY) minY = p[1];
+        if (p[1] > maxY) maxY = p[1];
+      }
+    }
+  };
+  if (geom.type === "Polygon") scanRings((geom as GeoJSON.Polygon).coordinates);
+  else if (geom.type === "MultiPolygon") {
+    for (const poly of (geom as GeoJSON.MultiPolygon).coordinates) scanRings(poly);
+  } else return null;
+  return minX === Infinity ? null : [minX, minY, maxX, maxY];
+}
+
+// fill-color data-driven : match sur "biome-shade" → 18 combos, défaut = grass[0]
+const CELL_FILL_COLOR = (() => {
+  const expr: unknown[] = [
+    "match",
+    ["concat", ["get", "biome"], "-", ["to-string", ["get", "shade"]]],
+  ];
+  for (const key of Object.keys(BIOMES) as BiomeKey[]) {
+    BIOMES[key].forEach((color, i) => expr.push(`${key}-${i}`, color));
+  }
+  expr.push(BIOMES.grass[0]);
+  return expr;
+})();
 
 function cellPolygonFeature(cellId: string): GeoJSON.Feature | null {
   const cell = cellFromId(cellId);
@@ -394,14 +449,60 @@ export default function MapScreen() {
           }
         }
 
+        // 2) Landcover + landuse → candidats biome avec bbox précalculée.
+        //    landcover d'abord (tiebreak à priorité égale). Vide/erreur = ok.
+        let candidates: BiomeCandidate[] = [];
+        for (const sourceLayer of ["landcover", "landuse"] as const) {
+          try {
+            const fc = await map.querySourceFeatures("composite", undefined, [sourceLayer]);
+            for (const f of fc?.features ?? []) {
+              const clazz = (f.properties as { class?: unknown } | null)?.class;
+              const biome = typeof clazz === "string" ? classToBiome(clazz) : null;
+              if (!biome) continue;
+              const bbox = polygonBbox(f.geometry);
+              if (!bbox) continue;
+              candidates.push({
+                bbox,
+                area: (bbox[2] - bbox[0]) * (bbox[3] - bbox[1]),
+                priority: BIOME_PRIORITY[biome],
+                biome,
+                feature: f,
+              });
+            }
+          } catch {
+            // Source layer indisponible → biomes partiels, herbe par défaut
+          }
+        }
+        // Garde-fou perf : ne garder que les plus grandes features
+        if (candidates.length > BIOME_FEATURES_MAX) {
+          candidates.sort((a, b) => b.area - a.area);
+          candidates = candidates.slice(0, BIOME_FEATURES_MAX);
+        }
+        // Tri par priorité (stable → landcover avant landuse à priorité égale) :
+        // le premier hit est le meilleur, on peut break.
+        candidates.sort((a, b) => a.priority - b.priority);
+
         const features: GeoJSON.Feature[] = [];
         for (const cell of cells) {
-          if (isPointInWater([cell.center.lng, cell.center.lat], water)) continue;
+          const pt: [number, number] = [cell.center.lng, cell.center.lat];
+          if (isPointInWater(pt, water)) continue;
+          // Biome : bbox-reject rapide puis ray-cast ; premier match = gagnant
+          let biome: BiomeKey = "grass";
+          for (const c of candidates) {
+            if (
+              pt[0] < c.bbox[0] || pt[0] > c.bbox[2] ||
+              pt[1] < c.bbox[1] || pt[1] > c.bbox[3]
+            ) continue;
+            if (pointInFeature(pt, c.feature)) {
+              biome = c.biome;
+              break;
+            }
+          }
           // Teinte déterministe par cellule (hash row/col)
           const shade = (((cell.row * 73856093) ^ (cell.col * 19349663)) >>> 0) % 3;
           features.push({
             type: "Feature",
-            properties: { shade },
+            properties: { biome, shade },
             geometry: {
               type: "Polygon",
               coordinates: [[
@@ -560,12 +661,7 @@ export default function MapScreen() {
           <MapboxGL.FillLayer
             id="land-cells-fill"
             style={{
-              fillColor: [
-                "match", ["get", "shade"],
-                0, LAND_SHADES[0],
-                1, LAND_SHADES[1],
-                LAND_SHADES[2],
-              ] as any,
+              fillColor: CELL_FILL_COLOR as any,
               fillOpacity: 1,
             }}
           />
