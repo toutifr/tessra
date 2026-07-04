@@ -6,7 +6,7 @@ export default {
     orientation: "portrait",
     icon: "./assets/icon.png",
     userInterfaceStyle: "light",
-    scheme: "tessra",
+    scheme: "piri",
     splash: {
       image: "./assets/splash-icon.png",
       resizeMode: "contain",
@@ -14,7 +14,7 @@ export default {
     },
     ios: {
       supportsTablet: true,
-      bundleIdentifier: "com.tessra.app",
+      bundleIdentifier: "com.piri.app",
       infoPlist: {
         NSLocationWhenInUseUsageDescription:
           "Piri uses your location to show the tiles around you.",
@@ -33,7 +33,7 @@ export default {
         backgroundImage: "./assets/android-icon-background.png",
         monochromeImage: "./assets/android-icon-monochrome.png",
       },
-      package: "com.tessra.app",
+      package: "com.piri.app",
       predictiveBackGestureEnabled: false,
       permissions: [
         "android.permission.ACCESS_COARSE_LOCATION",

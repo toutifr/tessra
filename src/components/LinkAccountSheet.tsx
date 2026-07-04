@@ -34,7 +34,7 @@ async function linkWithProvider(provider: "google" | "apple"): Promise<void> {
   const { data, error } = await supabase.auth.linkIdentity({
     provider,
     options: {
-      redirectTo: "tessra://auth/callback",
+      redirectTo: "piri://auth/callback",
       ...(provider === "google"
         ? { queryParams: { access_type: "offline", prompt: "consent" } }
         : {}),
