@@ -1,5 +1,6 @@
 import { Component, ErrorInfo, ReactNode } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
+import { palette, radii } from "../theme";
 
 interface Props {
   children: ReactNode;
@@ -54,6 +55,6 @@ const styles = StyleSheet.create({
   },
   title: { fontSize: 24, fontWeight: "bold", marginBottom: 12 },
   message: { fontSize: 16, color: "#666", textAlign: "center", marginBottom: 24 },
-  button: { backgroundColor: "#007AFF", borderRadius: 8, padding: 16, paddingHorizontal: 32 },
+  button: { backgroundColor: palette.grass, borderRadius: radii.lg, padding: 16, paddingHorizontal: 32 },
   buttonText: { color: "#fff", fontSize: 16, fontWeight: "600" },
 });

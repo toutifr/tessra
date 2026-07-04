@@ -708,11 +708,11 @@ const styles = StyleSheet.create({
     width: 28,
     height: 28,
     borderRadius: 14,
-    backgroundColor: "#4F46E5",
+    backgroundColor: palette.diamondDark,
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 1,
-    borderColor: "#818CF8",
+    borderColor: palette.diamondLight,
   },
   shieldPhotoBadge: {
     position: "absolute",
@@ -751,7 +751,7 @@ const styles = StyleSheet.create({
     fontWeight: fonts.weights.semibold,
   },
   reviveButton: {
-    borderRadius: radii.full,
+    borderRadius: radii.lg,
     padding: spacing.base,
     alignItems: "center",
   },
@@ -821,7 +821,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
-    backgroundColor: "#FF6B35",
+    backgroundColor: palette.amber,
     borderRadius: radii.full,
     paddingHorizontal: spacing.sm,
     paddingVertical: 3,
@@ -831,7 +831,7 @@ const styles = StyleSheet.create({
 
   actionButton: {
     alignSelf: "stretch",
-    marginHorizontal: spacing.base, borderRadius: radii.full,
+    marginHorizontal: spacing.base, borderRadius: radii.lg,
     padding: spacing.base, alignItems: "center",
   },
   actionText: { fontSize: fonts.sizes.base, fontWeight: fonts.weights.semibold },

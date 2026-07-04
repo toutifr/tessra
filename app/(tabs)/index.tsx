@@ -26,7 +26,7 @@ import { useUserStats } from "../../src/hooks/useUserStats";
 import { getPlayfulMapStyle } from "../../src/lib/mapStyle";
 import { supabase } from "../../src/lib/supabase";
 import { minTakePrice } from "../../src/constants/iap";
-import { palette } from "../../src/theme";
+import { palette, radii } from "../../src/theme";
 import * as Haptics from "expo-haptics";
 
 MapboxGL.setAccessToken(MAPBOX_ACCESS_TOKEN);
@@ -71,9 +71,9 @@ const TARGET_META: Record<
   DailyTarget["kind"],
   { icon: keyof typeof Ionicons.glyphMap; color: string }
 > = {
-  scout: { icon: "camera", color: "#34C759" },
-  revive: { icon: "flame", color: "#FFB300" },
-  raid: { icon: "flag", color: "#FF3B30" },
+  scout: { icon: "camera", color: palette.grass },
+  revive: { icon: "flame", color: palette.amber },
+  raid: { icon: "flag", color: palette.redstone },
 };
 
 function targetLabel(t: DailyTarget): string {
@@ -193,7 +193,7 @@ export default function MapScreen() {
       return {
         icon: "camera" as const,
         label: "Claim this tile",
-        bg: palette.coral,
+        bg: palette.grass,
         fg: "#FFFFFF",
         route: `/upload?cellId=${myCellId}`,
       };
@@ -464,7 +464,7 @@ export default function MapScreen() {
         <MapboxGL.ShapeSource id="hot-squares" shape={hotSquaresGeoJSON}>
           <MapboxGL.LineLayer
             id="hot-squares-outline"
-            style={{ lineColor: "#FF6B35", lineWidth: 1.5, lineOpacity: 0.55 }}
+            style={{ lineColor: palette.redstone, lineWidth: 1.5, lineOpacity: 0.55 }}
           />
         </MapboxGL.ShapeSource>
 
@@ -472,7 +472,7 @@ export default function MapScreen() {
         <MapboxGL.ShapeSource id="my-squares" shape={myNormalGeoJSON}>
           <MapboxGL.LineLayer
             id="my-squares-outline"
-            style={{ lineColor: "#FFD700", lineWidth: 2 }}
+            style={{ lineColor: palette.gold, lineWidth: 2 }}
           />
         </MapboxGL.ShapeSource>
 
@@ -480,11 +480,11 @@ export default function MapScreen() {
         <MapboxGL.ShapeSource id="my-territories" shape={myTerritoryGeoJSON}>
           <MapboxGL.FillLayer
             id="my-territories-fill"
-            style={{ fillColor: "#FFD700", fillOpacity: 0.12 }}
+            style={{ fillColor: palette.gold, fillOpacity: 0.12 }}
           />
           <MapboxGL.LineLayer
             id="my-territories-outline"
-            style={{ lineColor: "#FFD700", lineWidth: 3 }}
+            style={{ lineColor: palette.gold, lineWidth: 3 }}
           />
         </MapboxGL.ShapeSource>
 
@@ -702,7 +702,7 @@ const styles = StyleSheet.create({
     width: 28,
     height: 28,
     borderRadius: 14,
-    backgroundColor: "rgba(10, 132, 255, 0.25)",
+    backgroundColor: "rgba(95, 179, 190, 0.25)", // palette.diamond @ 25%
     alignItems: "center",
     justifyContent: "center",
   },
@@ -710,7 +710,7 @@ const styles = StyleSheet.create({
     width: 14,
     height: 14,
     borderRadius: 7,
-    backgroundColor: "#0A84FF",
+    backgroundColor: palette.diamond,
     borderWidth: 2.5,
     borderColor: "#FFFFFF",
     shadowColor: "#000",
@@ -755,7 +755,7 @@ const styles = StyleSheet.create({
 
   ctaWrap: { position: "absolute", left: 72, right: 72, alignItems: "center" },
   ctaPill: {
-    borderRadius: 24,
+    borderRadius: radii.lg,
     paddingHorizontal: 22,
     paddingVertical: 13,
     borderWidth: 1,

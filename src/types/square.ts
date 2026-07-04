@@ -75,8 +75,8 @@ export interface Shield {
 }
 
 export const STATUS_COLORS: Record<SquareStatus, string> = {
-  libre: "#4CAF50",
-  occupe: "#2196F3",
-  signale: "#FF5722",
-  bloque: "#B71C1C",
+  libre: "#6FA860",   // grass
+  occupe: "#5FB3BE",  // diamond
+  signale: "#C25B52", // redstone
+  bloque: "#7A4A45",  // redstoneDeep
 };

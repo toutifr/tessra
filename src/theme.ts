@@ -227,10 +227,10 @@ export const spacing = {
 
 // ─── Radii ────────────────────────────────────────────────
 export const radii = {
-  sm:   8,
-  md:   14,
-  lg:   20,
-  xl:   24,
+  sm:   6,
+  md:   10,
+  lg:   12,
+  xl:   16,
   full: 9999,
 } as const;
 

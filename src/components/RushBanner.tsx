@@ -3,10 +3,10 @@ import { StyleSheet, Text, View, ViewStyle } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { getGameState, GameState } from "../lib/economy";
 import { useSWR } from "../lib/swr";
-import { useThemeColors, fonts, spacing, radii, shadows } from "../theme";
+import { palette, useThemeColors, fonts, spacing, radii, shadows } from "../theme";
 
-const RUSH_COLOR = "#FF6B35";
-const PULSE_COLOR = "#4F46E5"; // electric blue/violet
+const RUSH_COLOR = palette.amber;
+const PULSE_COLOR = palette.diamondDark;
 
 function pad(n: number): string {
   return n < 10 ? `0${n}` : String(n);
@@ -125,7 +125,7 @@ const styles = StyleSheet.create({
     gap: 5,
   },
   active: { backgroundColor: RUSH_COLOR },
-  pulse: { backgroundColor: PULSE_COLOR, borderWidth: 1, borderColor: "#818CF8" },
+  pulse: { backgroundColor: PULSE_COLOR, borderWidth: 1, borderColor: palette.diamondLight },
   activeText: {
     color: "#fff",
     fontSize: fonts.sizes.sm,

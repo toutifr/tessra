@@ -71,7 +71,7 @@ export default function ConquestOverlay({ title, subtitle, onDone }: Props) {
             styles.particle,
             {
               fontSize: p.size,
-              color: c.primary,
+              color: c.accent,
               opacity: p.progress.interpolate({
                 inputRange: [0, 0.15, 1],
                 outputRange: [0, 1, 0],

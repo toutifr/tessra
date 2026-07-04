@@ -630,11 +630,11 @@ function EmpireCard({ uid, colors: c }: { uid: string; colors: ThemeColors }) {
           <MapboxGL.ShapeSource id="empire-tiles" shape={geo.collection}>
             <MapboxGL.FillLayer
               id="empire-tiles-fill"
-              style={{ fillColor: "#FFD700", fillOpacity: 0.25 }}
+              style={{ fillColor: palette.gold, fillOpacity: 0.25 }}
             />
             <MapboxGL.LineLayer
               id="empire-tiles-outline"
-              style={{ lineColor: "#FFD700", lineWidth: 1.5 }}
+              style={{ lineColor: palette.gold, lineWidth: 1.5 }}
             />
           </MapboxGL.ShapeSource>
         </MapboxGL.MapView>
@@ -737,7 +737,7 @@ const styles = StyleSheet.create({
     color: "rgba(255,255,255,0.7)", fontSize: fonts.sizes.xs,
     fontWeight: fonts.weights.semibold,
   },
-  empireValueText: { color: "#FFD700", fontSize: fonts.sizes.sm, fontWeight: fonts.weights.bold },
+  empireValueText: { color: palette.gold, fontSize: fonts.sizes.sm, fontWeight: fonts.weights.bold },
   empireEmptyCard: {
     borderWidth: 1, borderRadius: radii.lg, padding: spacing.base,
     marginBottom: spacing.lg, alignItems: "center", gap: spacing.md,

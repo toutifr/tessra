@@ -992,7 +992,7 @@ const styles = StyleSheet.create({
   },
   voteCount: { fontSize: fonts.sizes.sm, fontWeight: fonts.weights.semibold },
   takeButton: {
-    borderRadius: radii.full,
+    borderRadius: radii.lg,
     paddingHorizontal: spacing.base,
     paddingVertical: spacing.sm,
   },

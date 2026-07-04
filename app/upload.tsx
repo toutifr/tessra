@@ -26,7 +26,7 @@ import ConquestOverlay from "../src/components/ConquestOverlay";
 import LinkAccountSheet, { useIsGuest } from "../src/components/LinkAccountSheet";
 import PressableScale from "../src/components/PressableScale";
 import IconLabel from "../src/components/IconLabel";
-import { useThemeColors, fonts, spacing, radii, shadows } from "../src/theme";
+import { palette, useThemeColors, fonts, spacing, radii, shadows } from "../src/theme";
 
 // Une seule invite de liaison de compte par lancement d'app.
 let linkPromptShown = false;
@@ -436,7 +436,7 @@ export default function UploadScreen() {
                 <IconLabel
                   icon="flag"
                   label="On-site raid: −30% applied"
-                  color="#34C759"
+                  color={palette.grass}
                   size={14}
                   gap={4}
                   textStyle={styles.raidNote}
@@ -590,7 +590,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
   },
   choiceButton: {
-    borderRadius: radii.full,
+    borderRadius: radii.lg,
     padding: spacing.base + 2,
     alignItems: "center",
   },
@@ -612,7 +612,7 @@ const styles = StyleSheet.create({
   },
   secondaryText: { fontSize: fonts.sizes.base, fontWeight: fonts.weights.medium },
   primaryButton: {
-    borderRadius: radii.full,
+    borderRadius: radii.lg,
     padding: spacing.base,
     paddingHorizontal: spacing.xl,
     flexShrink: 1,

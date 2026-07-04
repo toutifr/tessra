@@ -19,7 +19,7 @@ import { hapticSuccess } from "../src/lib/haptics";
 import AnimatedNumber from "../src/components/AnimatedNumber";
 import LinkAccountSheet, { useIsGuest } from "../src/components/LinkAccountSheet";
 import PressableScale from "../src/components/PressableScale";
-import { useThemeColors, fonts, spacing, radii, shadows } from "../src/theme";
+import { palette, useThemeColors, fonts, spacing, radii, shadows } from "../src/theme";
 
 function priceEur(pack: TesselPack): number {
   return Number(pack.priceLabel.replace(",", ".").replace(/[^\d.]/g, ""));
@@ -136,12 +136,12 @@ export default function PaywallScreen() {
               disabled={!!buying}
             >
               <View style={styles.packLeft}>
-                <Text style={[styles.packTessels, { color: c.text }]}>
+                <Text style={[styles.packTessels, { color: palette.goldDark }]}>
                   {pack.tessels} ⬡
                 </Text>
                 {bonus > 0 && (
-                  <View style={[styles.bonusBadge, { backgroundColor: c.primary }]}>
-                    <Text style={[styles.bonusText, { color: c.primaryText }]}>+{bonus}%</Text>
+                  <View style={[styles.bonusBadge, { backgroundColor: c.accentSoft }]}>
+                    <Text style={[styles.bonusText, { color: palette.goldDark }]}>+{bonus}%</Text>
                   </View>
                 )}
               </View>
