@@ -23,13 +23,32 @@ import {
 } from "../../src/lib/mapFocus";
 import { useAuth } from "../../src/providers/AuthProvider";
 import { useUserStats } from "../../src/hooks/useUserStats";
-import { getPlayfulMapStyle } from "../../src/lib/mapStyle";
+import { getPlayfulMapStyle, BIOMES, getWaterLayerIds } from "../../src/lib/mapStyle";
 import { supabase } from "../../src/lib/supabase";
 import { minTakePrice } from "../../src/constants/iap";
 import { palette, radii } from "../../src/theme";
 import * as Haptics from "expo-haptics";
 
 MapboxGL.setAccessToken(MAPBOX_ACCESS_TOKEN);
+
+// Biomes monde far-zoom — GeoJSON local (Natural Earth 110m + zones stylisées).
+// Rendu sous l'eau, fondu z5→z7 quand le landcover Mapbox prend le relais.
+const WORLD_BIOMES = require("../../src/assets/worldBiomes.json") as GeoJSON.FeatureCollection;
+const WORLD_BIOMES_FILL_COLOR = [
+  "match",
+  ["get", "biome"],
+  "sand", BIOMES.sand[1],
+  "snow", BIOMES.snow[1],
+  "forest", BIOMES.forest[1],
+  "rock", BIOMES.rock[1],
+  BIOMES.grass[1], // grass + fallback
+] as any;
+const WORLD_BIOMES_FILL_OPACITY = [
+  "interpolate", ["linear"], ["zoom"],
+  5, 0.9,
+  6, 0.5,
+  7, 0,
+] as any;
 
 const DEFAULT_CENTER: [number, number] = [2.3522, 48.8566]; // Paris
 const DEFAULT_ZOOM = 14;
@@ -454,6 +473,24 @@ export default function MapScreen() {
           zoomLevel={DEFAULT_ZOOM}
           centerCoordinate={center}
         />
+
+        {/* Biomes monde far-zoom — sous l'eau du style custom (belowLayerID).
+            Uniquement avec le styleJSON custom : les IDs water n'existent
+            qu'une fois getPlayfulMapStyle résolu. */}
+        {styleJSON && (
+          <MapboxGL.ShapeSource id="world-biomes" shape={WORLD_BIOMES}>
+            <MapboxGL.FillLayer
+              id="world-biomes-fill"
+              maxZoomLevel={7}
+              belowLayerID={getWaterLayerIds()[0]}
+              style={{
+                fillColor: WORLD_BIOMES_FILL_COLOR,
+                fillOpacity: WORLD_BIOMES_FILL_OPACITY,
+                fillAntialias: false,
+              }}
+            />
+          </MapboxGL.ShapeSource>
+        )}
 
         {/* Photos rendues dans les tuiles — visibles à TOUS les zooms */}
         <TileLayer />
