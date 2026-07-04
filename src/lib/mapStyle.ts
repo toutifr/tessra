@@ -79,10 +79,14 @@ const BIOME_FILL_MATCH: unknown[] = [
   TRANSPARENT, // classe inconnue → laisse le fond terre visible
 ];
 
-/** Biomes monde embarqués (Natural Earth simplifié) — comble les trous des
- *  données Mapbox au zoom lointain (déserts/glaces/toundra absents < z5).
+/** Biomes monde embarqués (Köppen-Geiger 0.5° → biomes, dissous+simplifié) —
+ *  comble les trous des données Mapbox au zoom lointain (déserts/glaces/toundra
+ *  absents < z5). Vraies formes : Sahara/Gobi/Atacama en sable, calottes
+ *  Groenland/Antarctique en neige, toundra + Tibet en roche, forêts = pluvieuses
+ *  tropicales (Af/Am) + taïga boréale (Dfc/Dfd/Dwc) ; plaines tempérées = herbe.
  *  Inséré SOUS landcover/landuse/water : ne recouvre jamais les vraies données.
- *  Fondu z5→z6.5 (au-delà, les données Mapbox suffisent). */
+ *  Fondu z5→z7 : la donnée est désormais cohérente et détaillée (plus de boîtes
+ *  moches), elle tient donc plus longtemps avant le relais Mapbox. */
 const WORLD_BIOMES = require("../assets/worldBiomes.json") as GeoJSON.FeatureCollection;
 const WORLD_BIOMES_LAYER = {
   id: "world-biomes-fill",
@@ -97,7 +101,7 @@ const WORLD_BIOMES_LAYER = {
       "forest", FOREST_DEEP,
       LAND_BASE,
     ],
-    "fill-opacity": ["interpolate", ["linear"], ["zoom"], 5, 1, 6.5, 0],
+    "fill-opacity": ["interpolate", ["linear"], ["zoom"], 5, 1, 7, 0],
     "fill-antialias": false,
   },
 } as StyleLayer;
