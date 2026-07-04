@@ -92,6 +92,7 @@ const WORLD_BIOMES_LAYER = {
   id: "world-biomes-fill",
   type: "fill",
   source: "world-biomes",
+  maxzoom: 7, // coupe nette : visible uniquement dézoomé, disparaît au zoom (pas de fondu)
   paint: {
     "fill-color": [
       "match", ["get", "biome"],
