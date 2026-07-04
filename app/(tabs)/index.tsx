@@ -509,7 +509,7 @@ export default function MapScreen() {
             >
               <MapboxGL.RasterLayer
                 id={`photo-layer-${sq.id}`}
-                style={{ rasterOpacity: 1 }}
+                style={{ rasterOpacity: photosDimmed ? 0.2 : 1 }}
               />
             </MapboxGL.ImageSource>
           );
@@ -532,7 +532,7 @@ export default function MapScreen() {
             >
               <MapboxGL.RasterLayer
                 id="optimistic-upload-layer"
-                style={{ rasterOpacity: 1 }}
+                style={{ rasterOpacity: photosDimmed ? 0.2 : 1 }}
               />
             </MapboxGL.ImageSource>
           );
