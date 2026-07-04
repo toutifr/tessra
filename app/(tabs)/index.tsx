@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, useMemo } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Animated, Pressable, StyleSheet, Text, View } from "react-native";
 import MapboxGL from "@rnmapbox/maps";
 import { Ionicons } from "@expo/vector-icons";
 import * as Location from "expo-location";
@@ -8,6 +8,8 @@ import { MAPBOX_ACCESS_TOKEN } from "../../src/constants/config";
 import { cellAt, cellFromId } from "../../src/lib/kmGrid";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import GridLayer from "../../src/components/GridLayer";
+import MapLegend from "../../src/components/MapLegend";
+import TargetPin from "../../src/components/TargetPin";
 import TileLayer from "../../src/components/TileLayer";
 import RushBanner from "../../src/components/RushBanner";
 import PressableScale from "../../src/components/PressableScale";
@@ -38,6 +40,8 @@ const REVIVE_WINDOW_MS = 20 * 60 * 60 * 1000;
 
 // First-run hint — shown at most once per app session
 let mapHintShownThisSession = false;
+// Help FAB pulse — discoverability, once per app session
+let helpFabPulsedThisSession = false;
 
 function cellPolygonFeature(cellId: string): GeoJSON.Feature | null {
   const cell = cellFromId(cellId);
@@ -69,11 +73,11 @@ function cellsToFeatureCollection(squares: SquareWithImage[]): GeoJSON.FeatureCo
 
 const TARGET_META: Record<
   DailyTarget["kind"],
-  { icon: keyof typeof Ionicons.glyphMap; color: string }
+  { icon: keyof typeof Ionicons.glyphMap; color: string; darkColor: string }
 > = {
-  scout: { icon: "camera", color: palette.grass },
-  revive: { icon: "flame", color: palette.amber },
-  raid: { icon: "flag", color: palette.redstone },
+  scout: { icon: "camera", color: palette.grass, darkColor: palette.grassDark },
+  revive: { icon: "flame", color: palette.amber, darkColor: palette.amberDark },
+  raid: { icon: "flag", color: palette.redstone, darkColor: palette.redstoneDark },
 };
 
 function targetLabel(t: DailyTarget): string {
@@ -194,6 +198,7 @@ export default function MapScreen() {
       return {
         icon: "camera" as const,
         label: "Claim this tile",
+        sub: "Free — you're standing on it",
         bg: palette.grass,
         fg: "#FFFFFF",
         route: `/upload?cellId=${myCellId}`,
@@ -207,6 +212,7 @@ export default function MapScreen() {
         ? {
             icon: "flame" as const,
             label: "Revive this tile",
+            sub: "Keep your streak alive",
             bg: palette.warning,
             fg: "#FFFFFF",
             route: `/square/${sq.id}`,
@@ -214,6 +220,7 @@ export default function MapScreen() {
         : {
             icon: "checkmark-circle" as const,
             label: "Your tile",
+            sub: undefined,
             bg: "rgba(28, 28, 30, 0.92)",
             fg: "#FFFFFF",
             route: `/square/${sq.id}`,
@@ -221,12 +228,29 @@ export default function MapScreen() {
     }
     return {
       icon: "flag" as const,
-      label: `Take over — ${minTakePrice(sq.last_price ?? 0)} ⬡`,
+      label: "Take over",
+      sub: `Costs ${minTakePrice(sq.last_price ?? 0)} ⬡ — you're on site`,
       bg: "rgba(28, 28, 30, 0.92)",
       fg: "#FFFFFF",
       route: `/square/${sq.id}`,
     };
   }, [userLocation, myCellId, standingSquare, meId]);
+
+  // Légende de la carte — bottom sheet via le FAB "help"
+  const [legendVisible, setLegendVisible] = useState(false);
+  // Pulse de découvrabilité du FAB help (2-3 battements, 1×/session)
+  const helpFabScale = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    if (helpFabPulsedThisSession) return;
+    helpFabPulsedThisSession = true;
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(helpFabScale, { toValue: 1.15, duration: 380, useNativeDriver: true }),
+        Animated.timing(helpFabScale, { toValue: 1, duration: 380, useNativeDriver: true }),
+      ]),
+      { iterations: 3 },
+    ).start();
+  }, [helpFabScale]);
 
   // First-run hint : 0 publication → petite bulle pédagogique (1×/session)
   const { stats, loading: statsLoading } = useUserStats();
@@ -554,25 +578,31 @@ export default function MapScreen() {
           </MapboxGL.MarkerView>
         )}
 
-        {/* Objectifs du jour — 3 marqueurs */}
+        {/* Objectifs du jour — 3 pins "chunky" (scale-in au mount, tap → flyTo) */}
         {targets?.map((t) => (
           <MapboxGL.MarkerView
             key={`target-${t.kind}-${t.cell_id}`}
             coordinate={[t.lng, t.lat]}
+            anchor={{ x: 0.5, y: 1 }}
             allowOverlap
           >
-            <View
-              style={[
-                styles.targetDot,
-                { backgroundColor: TARGET_META[t.kind].color, opacity: t.done ? 0.5 : 1 },
-              ]}
+            <Pressable
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                flyToTarget(t);
+                setTargetsCollapsed(false);
+              }}
+              hitSlop={6}
+              accessibilityLabel={targetLabel(t)}
             >
-              <Ionicons
-                name={t.done ? "checkmark" : TARGET_META[t.kind].icon}
-                size={14}
-                color="#FFFFFF"
+              <TargetPin
+                color={TARGET_META[t.kind].color}
+                darkColor={TARGET_META[t.kind].darkColor}
+                icon={TARGET_META[t.kind].icon}
+                done={t.done}
+                animated
               />
-            </View>
+            </Pressable>
           </MapboxGL.MarkerView>
         ))}
       </MapboxGL.MapView>
@@ -586,7 +616,9 @@ export default function MapScreen() {
       {hintVisible && (
         <View style={[styles.hintWrap, { top: insets.top + 56 }]}>
           <View style={styles.hintCard}>
-            <Text style={styles.hintText}>Tap any tile on the map to explore it</Text>
+            <Text style={styles.hintText}>
+              This square of the world is empty. Make it yours — snap a photo.
+            </Text>
             <Pressable
               onPress={() => setHintVisible(false)}
               hitSlop={10}
@@ -616,6 +648,7 @@ export default function MapScreen() {
               size={16}
               textStyle={styles.ctaText}
             />
+            {standingCta.sub && <Text style={styles.ctaSub}>{standingCta.sub}</Text>}
           </PressableScale>
         </View>
       )}
@@ -677,6 +710,30 @@ export default function MapScreen() {
         </View>
       )}
 
+      {/* FAB : légende de la carte — empilé au-dessus des autres FABs */}
+      <Animated.View
+        style={[
+          styles.locateFab,
+          styles.fabShell,
+          {
+            bottom: insets.bottom + (userLocation ? 144 : 84),
+            transform: [{ scale: helpFabScale }],
+          },
+        ]}
+      >
+        <Pressable
+          style={({ pressed }) => [styles.fabInner, { opacity: pressed ? 0.8 : 1 }]}
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            setLegendVisible(true);
+          }}
+          accessibilityRole="button"
+          accessibilityLabel="What do the map symbols mean?"
+        >
+          <Ionicons name="help" size={22} color="#FFFFFF" />
+        </Pressable>
+      </Animated.View>
+
       {/* FAB : atténuer les photos (20%) pour voir la carte derrière */}
       <Pressable
         style={({ pressed }) => [
@@ -691,7 +748,9 @@ export default function MapScreen() {
           Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
           setPhotosDimmed((d) => !d);
         }}
-        accessibilityLabel={photosDimmed ? "Show photos" : "Dim photos to see the map"}
+        accessibilityRole="button"
+        accessibilityState={{ selected: photosDimmed }}
+        accessibilityLabel={photosDimmed ? "Show photos" : "Dim photos to see the ground"}
       >
         <Ionicons name={photosDimmed ? "eye-off" : "eye"} size={22} color="#FFFFFF" />
       </Pressable>
@@ -715,6 +774,9 @@ export default function MapScreen() {
           <Ionicons name="locate" size={22} color="#FFFFFF" />
         </Pressable>
       )}
+
+      {/* Légende — bottom sheet */}
+      <MapLegend visible={legendVisible} onClose={() => setLegendVisible(false)} />
     </View>
   );
 }
@@ -745,20 +807,6 @@ const styles = StyleSheet.create({
   map: { flex: 1 },
   rushOverlay: { position: "absolute", left: 12, right: 12 },
 
-  targetDot: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 2,
-    borderColor: "#FFFFFF",
-    shadowColor: "#000",
-    shadowOpacity: 0.3,
-    shadowRadius: 3,
-    shadowOffset: { width: 0, height: 1 },
-    elevation: 4,
-  },
   targetsWrap: { position: "absolute", left: 12 },
 
   hintWrap: { position: "absolute", left: 12, right: 12, alignItems: "center" },
@@ -778,8 +826,8 @@ const styles = StyleSheet.create({
   ctaWrap: { position: "absolute", left: 72, right: 72, alignItems: "center" },
   ctaPill: {
     borderRadius: radii.lg,
-    paddingHorizontal: 22,
-    paddingVertical: 13,
+    paddingHorizontal: 26,
+    paddingVertical: 14,
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.25)",
     shadowColor: "#000",
@@ -789,6 +837,13 @@ const styles = StyleSheet.create({
     elevation: 6,
   },
   ctaText: { fontSize: 15, fontWeight: "700" },
+  ctaSub: {
+    color: "rgba(255,255,255,0.7)",
+    fontSize: 11,
+    fontWeight: "500",
+    textAlign: "center",
+    marginTop: 3,
+  },
   targetsChip: {
     backgroundColor: "rgba(28, 28, 30, 0.92)",
     borderWidth: 1,
@@ -830,6 +885,14 @@ const styles = StyleSheet.create({
   fabActive: {
     backgroundColor: palette.grass,
     borderColor: "rgba(255,255,255,0.25)",
+  },
+  // Coquille animée du FAB help : le Pressable remplit le cercle
+  // (pas d'overflow hidden — ça couperait l'ombre iOS)
+  fabShell: {},
+  fabInner: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: "center",
+    justifyContent: "center",
   },
   locateFab: {
     position: "absolute",

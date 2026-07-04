@@ -559,7 +559,7 @@ function EmpireCard({ uid, colors: c }: { uid: string; colors: ThemeColors }) {
     return (
       <View style={[styles.empireEmptyCard, { backgroundColor: c.card, borderColor: c.cardBorder }, shadows.sm]}>
         <Text style={[styles.empireEmptyText, { color: c.textSecondary }]}>
-          No tiles yet — your empire starts with one claim
+          Your empire starts with one photo. Go claim your first tile.
         </Text>
         <PressableScale
           style={[styles.empireEmptyButton, { backgroundColor: c.primary }]}

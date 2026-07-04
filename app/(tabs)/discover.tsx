@@ -576,7 +576,7 @@ export default function DiscoverScreen() {
             ListEmptyComponent={
               <View style={styles.emptyWrap}>
                 <Text style={[styles.emptyText, { color: c.textTertiary }]}>
-                  The mosaic is empty around here. Be the first — claim a tile on the map!
+                  The world is quiet… be the first to drop a photo today.
                 </Text>
                 <PressableScale
                   style={[styles.emptyButton, { backgroundColor: c.primary }, shadows.md]}
@@ -641,7 +641,7 @@ export default function DiscoverScreen() {
               removeClippedSubviews
               ListEmptyComponent={
                 <Text style={[styles.emptyText, { color: c.textTertiary }]}>
-                  No rankings yet.
+                  The throne is still empty — claim a tile and your name starts the list.
                 </Text>
               }
               contentContainerStyle={styles.lbContent}
@@ -734,8 +734,8 @@ export default function DiscoverScreen() {
             <Text style={styles.introEmoji}>⬡</Text>
             <Text style={[styles.introTitle, { color: c.text }]}>Join forces to fill the mosaic</Text>
             <Text style={[styles.introText, { color: c.textSecondary }]}>
-              Join a team, stack your takeovers and climb the weekly rankings. Podium Monday:
-              +200/+100/+50 ⬡ per member.
+              Every empire needs allies. Join a team, stack your takeovers and climb the
+              weekly rankings. Podium Monday: +200/+100/+50 ⬡ per member.
             </Text>
           </View>
 
