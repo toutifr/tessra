@@ -16,8 +16,10 @@ import { cellFromId } from "../../src/lib/kmGrid";
 import { focusOnMap } from "../../src/lib/mapFocus";
 import { useAuth } from "../../src/providers/AuthProvider";
 import { ListSkeleton } from "../../src/components/Skeleton";
-import PressableScale from "../../src/components/PressableScale";
-import { useThemeColors, fonts, spacing, radii, shadows, ThemeColors } from "../../src/theme";
+import GameButton from "../../src/components/GameButton";
+import { TAB_BAR_SPACE } from "../../src/components/GameTabBar";
+import { hapticSelection } from "../../src/lib/haptics";
+import { useThemeColors, fonts, spacing, radii, edges, shadows, palette, ThemeColors } from "../../src/theme";
 
 interface HistoryEntry {
   id: string;
@@ -28,18 +30,6 @@ interface HistoryEntry {
   acquisition_mode: string;
   cell_id: string | null;
 }
-
-const STATUS_LABELS: Record<string, string> = {
-  active: "Active",
-  replaced: "Replaced",
-  deleted: "Deleted",
-};
-
-const MODE_LABELS: Record<string, string> = {
-  free: "Free",
-  paid: "Paid",
-  replaced: "Replacement",
-};
 
 type FilterType = "all" | "active" | "replaced";
 
@@ -92,14 +82,45 @@ async function fetchHistory(uid: string, filter: FilterType): Promise<HistoryEnt
   }));
 }
 
-function formatDate(dateStr: string) {
-  return new Date(dateStr).toLocaleDateString("en-US", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+function timeAgo(dateStr: string): string {
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const min = Math.floor(diff / 60000);
+  if (min < 1) return "just now";
+  if (min < 60) return `${min} min ago`;
+  const h = Math.floor(min / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.floor(h / 24);
+  if (d < 30) return `${d}d ago`;
+  return new Date(dateStr).toLocaleDateString("en-US", { day: "numeric", month: "short" });
+}
+
+/** Habillage narratif par type d'événement — purement visuel. */
+function eventMeta(item: HistoryEntry): {
+  icon: keyof typeof Ionicons.glyphMap;
+  tint: string;
+  title: string;
+} {
+  if (item.status === "replaced") {
+    return {
+      icon: "flash",
+      tint: palette.redstone,
+      title: "A rival took your tile",
+    };
+  }
+  if (item.status === "deleted") {
+    return { icon: "trash", tint: palette.gray500, title: "Photo removed" };
+  }
+  if (item.acquisition_mode === "paid" || item.acquisition_mode === "replaced") {
+    return { icon: "flag", tint: palette.gold, title: "You conquered a tile" };
+  }
+  return { icon: "camera", tint: palette.grass, title: "You claimed a tile" };
+}
+
+function soft(hex: string): string {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `rgba(${r},${g},${b},0.16)`;
 }
 
 const HistoryCard = memo(function HistoryCard({
@@ -111,47 +132,50 @@ const HistoryCard = memo(function HistoryCard({
   c: ThemeColors;
   onLocate: (cellId: string) => void;
 }) {
+  const meta = eventMeta(item);
+  const lost = item.status === "replaced";
   return (
     <View style={[styles.card, { backgroundColor: c.card, borderColor: c.cardBorder }, shadows.sm]}>
-      <Image
-        source={{ uri: item.image_url }}
-        style={styles.thumbnail}
-        contentFit="cover"
-        transition={150}
-        cachePolicy="memory-disk"
-        recyclingKey={item.id}
-      />
-      <View style={styles.cardInfo}>
-        <View style={styles.cardTop}>
-          <Text style={[styles.cardStatus, { color: c.text }]}>
-            {STATUS_LABELS[item.status] ?? item.status}
-          </Text>
-          <View style={[
-            styles.modeBadge,
-            { backgroundColor: item.status === "active" ? c.primarySoft : c.bgTertiary },
-          ]}>
-            <Text style={[
-              styles.modeText,
-              { color: item.status === "active" ? c.primary : c.textTertiary },
-            ]}>
-              {MODE_LABELS[item.acquisition_mode] ?? item.acquisition_mode}
-            </Text>
-          </View>
+      <View style={styles.cardMain}>
+        <View style={[styles.pastille, { backgroundColor: soft(meta.tint) }]}>
+          <Ionicons name={meta.icon} size={18} color={meta.tint} />
         </View>
-        <Text style={[styles.cardDate, { color: c.textTertiary }]}>{formatDate(item.started_at)}</Text>
-        {item.ended_at && (
-          <Text style={[styles.cardDate, { color: c.textTertiary }]}>Ended: {formatDate(item.ended_at)}</Text>
+        <View style={styles.cardInfo}>
+          <Text style={[styles.cardTitle, { color: c.text }]} numberOfLines={1}>
+            {meta.title}
+          </Text>
+          <Text style={[styles.cardTime, { color: c.textTertiary }]}>
+            {timeAgo(lost && item.ended_at ? item.ended_at : item.started_at)}
+          </Text>
+        </View>
+        <Image
+          source={{ uri: item.image_url }}
+          style={styles.thumbnail}
+          contentFit="cover"
+          transition={150}
+          cachePolicy="memory-disk"
+          recyclingKey={item.id}
+        />
+        {!!item.cell_id && (
+          <Pressable
+            onPress={() => onLocate(item.cell_id!)}
+            hitSlop={8}
+            style={({ pressed }) => [styles.locateButton, { opacity: pressed ? 0.6 : 1 }]}
+            accessibilityLabel="Locate on map"
+          >
+            <Ionicons name="location-outline" size={18} color={c.textTertiary} />
+          </Pressable>
         )}
       </View>
-      {!!item.cell_id && (
-        <Pressable
+      {lost && !!item.cell_id && (
+        <GameButton
+          label="Strike back"
+          icon="flash"
+          variant="danger"
+          size="md"
           onPress={() => onLocate(item.cell_id!)}
-          hitSlop={8}
-          style={({ pressed }) => [styles.locateButton, { opacity: pressed ? 0.6 : 1 }]}
-          accessibilityLabel="Locate on map"
-        >
-          <Ionicons name="map-outline" size={18} color={c.textTertiary} />
-        </Pressable>
+          style={styles.strikeButton}
+        />
       )}
     </View>
   );
@@ -205,28 +229,40 @@ export default function HistoryScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: c.bg }]}>
-      <Text style={[styles.title, { color: c.text }]}>My publications</Text>
+      <Text style={[styles.title, { color: c.text }]}>History</Text>
 
       <View style={styles.filterRow}>
-        {filters.map((f) => (
-          <Pressable
-            key={f.key}
-            style={[
-              styles.filterButton,
-              { backgroundColor: filter === f.key ? c.primary : c.bgTertiary },
-            ]}
-            onPress={() => setFilter(f.key)}
-          >
-            <Text
+        {filters.map((f) => {
+          const active = filter === f.key;
+          return (
+            <Pressable
+              key={f.key}
               style={[
-                styles.filterText,
-                { color: filter === f.key ? c.primaryText : c.textSecondary },
+                styles.filterButton,
+                active
+                  ? {
+                      backgroundColor: palette.grass,
+                      borderBottomWidth: edges.button - 1,
+                      borderBottomColor: palette.grassDark,
+                    }
+                  : { backgroundColor: c.card, borderWidth: 1, borderColor: c.cardBorder },
               ]}
+              onPress={() => {
+                hapticSelection();
+                setFilter(f.key);
+              }}
             >
-              {f.label}
-            </Text>
-          </Pressable>
-        ))}
+              <Text
+                style={[
+                  styles.filterText,
+                  { color: active ? palette.white : c.textSecondary },
+                ]}
+              >
+                {f.label}
+              </Text>
+            </Pressable>
+          );
+        })}
       </View>
 
       {loading && entries.length === 0 ? (
@@ -249,14 +285,11 @@ export default function HistoryScreen() {
               <Text style={[styles.emptyText, { color: c.textTertiary }]}>
                 No tiles yet. Go claim your first one on the map
               </Text>
-              <PressableScale
-                style={[styles.emptyButton, { backgroundColor: c.primary }, shadows.md]}
+              <GameButton
+                label="Open the map"
+                icon="map"
                 onPress={() => router.push("/(tabs)")}
-              >
-                <Text style={[styles.emptyButtonText, { color: c.primaryText }]}>
-                  Open the map
-                </Text>
-              </PressableScale>
+              />
             </View>
           }
         />
@@ -268,54 +301,52 @@ export default function HistoryScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   title: {
-    fontSize: fonts.sizes.xxl,
-    fontWeight: fonts.weights.bold,
+    fontSize: fonts.sizes.hero,
+    fontWeight: fonts.weights.heavy,
     paddingHorizontal: spacing.base,
     paddingTop: 60,
     paddingBottom: spacing.base,
-    letterSpacing: -0.5,
+    letterSpacing: fonts.letterSpacing.tight,
   },
   filterRow: {
     flexDirection: "row",
     paddingHorizontal: spacing.base,
     gap: spacing.sm,
-    marginBottom: spacing.md,
+    marginBottom: spacing.base,
   },
   filterButton: {
-    paddingVertical: spacing.xs + 2,
+    height: 34,
     paddingHorizontal: spacing.base,
     borderRadius: radii.full,
+    alignItems: "center",
+    justifyContent: "center",
   },
-  filterText: { fontSize: fonts.sizes.sm, fontWeight: fonts.weights.medium },
-  list: { paddingHorizontal: spacing.base, paddingBottom: spacing.xxl },
+  filterText: { fontSize: fonts.sizes.sm, fontWeight: fonts.weights.bold },
+  list: { paddingHorizontal: spacing.base, paddingBottom: TAB_BAR_SPACE + spacing.base },
   empty: {
     flex: 1, alignItems: "center", justifyContent: "center",
     paddingTop: 60, gap: spacing.lg, paddingHorizontal: spacing.xl,
   },
   emptyText: { fontSize: fonts.sizes.base, textAlign: "center" },
-  emptyButton: {
-    borderRadius: radii.full,
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.xl,
-  },
-  emptyButtonText: { fontSize: fonts.sizes.base, fontWeight: fonts.weights.semibold },
+
   card: {
-    flexDirection: "row",
-    padding: spacing.md,
-    marginBottom: spacing.sm,
-    borderRadius: radii.md,
+    borderRadius: radii.lg,
     borderWidth: 1,
+    padding: spacing.md,
+    marginBottom: spacing.md,
   },
-  thumbnail: { width: 60, height: 60, borderRadius: radii.sm, marginRight: spacing.md },
-  cardInfo: { flex: 1, justifyContent: "center" },
-  locateButton: { alignSelf: "center", padding: spacing.sm },
-  cardTop: { flexDirection: "row", alignItems: "center", gap: spacing.sm, marginBottom: 2 },
-  cardStatus: { fontSize: fonts.sizes.base, fontWeight: fonts.weights.semibold },
-  modeBadge: {
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 2,
-    borderRadius: radii.full,
+  cardMain: { flexDirection: "row", alignItems: "center", gap: spacing.md },
+  pastille: {
+    width: 38,
+    height: 38,
+    borderRadius: radii.md,
+    alignItems: "center",
+    justifyContent: "center",
   },
-  modeText: { fontSize: fonts.sizes.xs, fontWeight: fonts.weights.medium },
-  cardDate: { fontSize: fonts.sizes.xs, marginTop: 2 },
+  cardInfo: { flex: 1 },
+  cardTitle: { fontSize: fonts.sizes.base, fontWeight: fonts.weights.bold },
+  cardTime: { fontSize: fonts.sizes.xs, marginTop: 2, fontWeight: fonts.weights.medium },
+  thumbnail: { width: 44, height: 44, borderRadius: radii.md },
+  locateButton: { padding: spacing.xs },
+  strikeButton: { marginTop: spacing.md },
 });

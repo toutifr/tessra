@@ -2,7 +2,6 @@ import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
-  Dimensions,
   FlatList,
   Pressable,
   RefreshControl,
@@ -40,12 +39,17 @@ import { useAuth } from "../../src/providers/AuthProvider";
 import RushBanner from "../../src/components/RushBanner";
 import LinkAccountSheet, { useIsGuest } from "../../src/components/LinkAccountSheet";
 import PressableScale from "../../src/components/PressableScale";
+import PhotoCard from "../../src/components/PhotoCard";
+import Avatar from "../../src/components/Avatar";
+import GameButton from "../../src/components/GameButton";
+import ProgressBar from "../../src/components/ProgressBar";
+import SectionHeader from "../../src/components/SectionHeader";
+import StatChip from "../../src/components/StatChip";
+import { TAB_BAR_SPACE } from "../../src/components/GameTabBar";
 import { FeedSkeleton, ListSkeleton } from "../../src/components/Skeleton";
 import { track } from "../../src/lib/track";
-import { hapticLight, hapticSuccess } from "../../src/lib/haptics";
-import { useThemeColors, fonts, spacing, radii, shadows, palette, ThemeColors } from "../../src/theme";
-
-const IMAGE_SIZE = Dimensions.get("window").width;
+import { hapticLight, hapticSelection, hapticSuccess } from "../../src/lib/haptics";
+import { useThemeColors, fonts, spacing, radii, edges, shadows, palette, ThemeColors } from "../../src/theme";
 
 function relativeTime(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
@@ -58,10 +62,10 @@ function relativeTime(iso: string): string {
   return `${d}d ago`;
 }
 
-const LEADERBOARD_KINDS: { kind: LeaderboardKind; label: string }[] = [
-  { kind: "tiles", label: "Tiles" },
-  { kind: "votes", label: "Votes" },
-  { kind: "explorer", label: "Explorer" },
+const LEADERBOARD_KINDS: { kind: LeaderboardKind; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
+  { kind: "tiles", label: "Tiles", icon: "map" },
+  { kind: "votes", label: "Votes", icon: "heart" },
+  { kind: "explorer", label: "Explorer", icon: "compass" },
 ];
 
 // Identités d'équipe : "⬡" (glyphe monnaie, pas un emoji) + noms d'Ionicons.
@@ -89,115 +93,57 @@ interface TeamData {
   teams: TeamRow[];
 }
 
+// ─── Quêtes : habillage jeu ───────────────────────────────
+const QUEST_TINTS = [palette.grass, palette.diamond, palette.amber];
+
+function questIcon(key: string, label: string): keyof typeof Ionicons.glyphMap {
+  const s = `${key} ${label}`.toLowerCase();
+  if (/vote|heart|like/.test(s)) return "heart";
+  if (/explor|scout|discover|new/.test(s)) return "compass";
+  if (/take|raid|conquer|replace|steal/.test(s)) return "flag";
+  if (/photo|publish|claim|post|tile/.test(s)) return "camera";
+  return "sparkles";
+}
+
+function soft(hex: string): string {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `rgba(${r},${g},${b},0.16)`;
+}
+
 // ─── Carte du feed (memoïsée) ─────────────────────────────
-const FeedCard = memo(function FeedCard({
+const FeedRow = memo(function FeedRow({
   item,
-  userId,
-  c,
   onVote,
   onOpen,
   onLocate,
 }: {
   item: FeedItem;
-  userId: string | null;
-  c: ThemeColors;
   onVote: (item: FeedItem) => void;
   onOpen: (squareId: string) => void;
   onLocate: (cellId: string) => void;
 }) {
-  const canVote = !item.has_voted && item.owner_id !== userId;
   return (
-    <View style={[styles.card, { backgroundColor: c.bgSecondary }]}>
-      {/* Header */}
-      <View style={styles.cardHeader}>
-        {item.avatar_url ? (
-          <Image
-            source={{ uri: item.avatar_url }}
-            style={styles.cardAvatar}
-            contentFit="cover"
-            transition={150}
-            cachePolicy="memory-disk"
-            recyclingKey={item.publication_id}
-          />
-        ) : (
-          <View style={[styles.cardAvatar, styles.avatarFallback, { backgroundColor: c.primary }]}>
-            <Text style={styles.avatarInitial}>
-              {item.username?.charAt(0).toUpperCase() ?? "?"}
-            </Text>
-          </View>
-        )}
-        <View style={styles.cardHeaderText}>
-          <Text style={[styles.cardUsername, { color: c.text }]} numberOfLines={1}>
-            {item.username}
-          </Text>
-          <Text style={[styles.cardTime, { color: c.textTertiary }]}>
-            {relativeTime(item.created_at)}
-          </Text>
+    <View style={styles.feedRow}>
+      <PhotoCard
+        imageUrl={item.image_url}
+        userName={item.username}
+        userId={item.owner_id}
+        timeAgo={relativeTime(item.created_at)}
+        priceLabel={item.is_shielded ? undefined : `${item.min_price} ⬡`}
+        votes={item.vote_count}
+        voted={item.has_voted}
+        onVote={() => onVote(item)}
+        onLocate={() => onLocate(item.cell_id)}
+        onOpen={() => onOpen(item.square_id)}
+      />
+      {item.is_shielded && (
+        <View style={[styles.shieldBadge, { backgroundColor: soft(palette.amber) }]}>
+          <Ionicons name="shield" size={11} color={palette.amber} />
+          <Text style={[styles.shieldBadgeText, { color: palette.amber }]}>Protected</Text>
         </View>
-        {!!item.cell_id && (
-          <Pressable
-            onPress={() => onLocate(item.cell_id)}
-            hitSlop={8}
-            style={({ pressed }) => [styles.locateButton, { opacity: pressed ? 0.6 : 1 }]}
-            accessibilityLabel="Locate on map"
-          >
-            <Ionicons name="map-outline" size={18} color={c.textTertiary} />
-          </Pressable>
-        )}
-        {item.is_shielded && (
-          <View style={[styles.shieldBadge, { backgroundColor: `${palette.warning}20` }]}>
-            <Ionicons name="shield" size={11} color={palette.warning} />
-            <Text style={[styles.shieldBadgeText, { color: palette.warning }]}>Protected</Text>
-          </View>
-        )}
-      </View>
-
-      {/* Image */}
-      <Pressable onPress={() => onOpen(item.square_id)}>
-        <Image
-          source={{ uri: item.image_url }}
-          style={styles.cardImage}
-          contentFit="cover"
-          transition={150}
-          cachePolicy="memory-disk"
-          recyclingKey={item.publication_id}
-        />
-      </Pressable>
-
-      {/* Footer */}
-      <View style={styles.cardFooter}>
-        <Pressable
-          style={({ pressed }) => [
-            styles.voteButton,
-            {
-              backgroundColor: item.has_voted ? c.primarySoft : c.bgTertiary,
-              opacity: pressed ? 0.8 : 1,
-            },
-          ]}
-          onPress={() => onVote(item)}
-          disabled={!canVote}
-        >
-          <Ionicons
-            name={item.has_voted ? "heart" : "heart-outline"}
-            size={16}
-            color={item.has_voted ? c.primary : c.textSecondary}
-          />
-          <Text style={[styles.voteCount, { color: item.has_voted ? c.primary : c.textSecondary }]}>
-            {item.vote_count}
-          </Text>
-        </Pressable>
-
-        {!item.is_shielded && item.owner_id !== userId && (
-          <PressableScale
-            style={[styles.takeButton, { backgroundColor: c.primary }, shadows.sm]}
-            onPress={() => onOpen(item.square_id)}
-          >
-            <Text style={[styles.takeText, { color: c.primaryText }]}>
-              Take over — {item.min_price} ⬡
-            </Text>
-          </PressableScale>
-        )}
-      </View>
+      )}
     </View>
   );
 });
@@ -381,16 +327,14 @@ export default function DiscoverScreen() {
 
   const renderCard = useCallback(
     ({ item }: { item: FeedItem }) => (
-      <FeedCard
+      <FeedRow
         item={item}
-        userId={userId}
-        c={c}
         onVote={handleVote}
         onOpen={openSquare}
         onLocate={locateOnMap}
       />
     ),
-    [userId, c, handleVote, openSquare, locateOnMap],
+    [handleVote, openSquare, locateOnMap],
   );
 
   const handleCreateTeam = async () => {
@@ -468,52 +412,58 @@ export default function DiscoverScreen() {
 
   const questsBanner =
     quests.length > 0 ? (
-      <View style={[styles.questsBanner, { backgroundColor: c.bgSecondary, borderColor: c.cardBorder }]}>
-        <View style={styles.questsHeader}>
-          <Text style={[styles.questsTitle, { color: c.text }]}>Daily quests</Text>
-          <Pressable onPress={() => router.push("/how-to-play")} hitSlop={8}>
-            <Ionicons name="help-circle-outline" size={20} color={c.textTertiary} />
-          </Pressable>
-        </View>
-        {quests.slice(0, 3).map((q) => {
+      <View style={styles.questsWrap}>
+        <SectionHeader
+          title="Daily quests"
+          color={palette.gold}
+          action={{ label: "Rules", onPress: () => router.push("/how-to-play") }}
+        />
+        <View style={{ height: spacing.md }} />
+        {quests.slice(0, 3).map((q, i) => {
           const done = q.progress >= q.target;
+          const tint = QUEST_TINTS[i % QUEST_TINTS.length];
           return (
-            <View key={q.key} style={styles.questRow}>
+            <View
+              key={q.key}
+              style={[
+                styles.questCard,
+                shadows.sm,
+                { backgroundColor: c.card, borderColor: c.cardBorder },
+              ]}
+            >
+              <View style={[styles.questPastille, { backgroundColor: soft(tint) }]}>
+                <Ionicons name={questIcon(q.key, q.label)} size={20} color={tint} />
+              </View>
               <View style={styles.questInfo}>
                 <Text style={[styles.questLabel, { color: c.text }]} numberOfLines={1}>
                   {q.label}
                 </Text>
-                <View style={[styles.progressTrack, { backgroundColor: c.bgTertiary }]}>
-                  <View
-                    style={[
-                      styles.progressFill,
-                      {
-                        backgroundColor: done ? c.success : c.primary,
-                        width: `${Math.min(100, (q.progress / q.target) * 100)}%`,
-                      },
-                    ]}
+                {!q.claimed && (
+                  <ProgressBar
+                    progress={q.progress / q.target}
+                    color={done ? palette.gold : tint}
+                    height={6}
                   />
-                </View>
+                )}
+                {q.claimed && (
+                  <Text style={[styles.questDoneText, { color: c.textTertiary }]}>
+                    Reward collected
+                  </Text>
+                )}
               </View>
               {done && !q.claimed ? (
-                <PressableScale
-                  style={[
-                    styles.claimButton,
-                    { backgroundColor: c.primary, opacity: claiming === q.key ? 0.8 : 1 },
-                  ]}
+                <GameButton
+                  label={`+${q.reward} ⬡`}
+                  variant="gold"
+                  size="md"
+                  loading={claiming === q.key}
+                  disabled={!!claiming && claiming !== q.key}
                   onPress={() => handleClaim(q)}
-                  disabled={!!claiming}
-                >
-                  <Text style={[styles.claimText, { color: c.primaryText }]}>
-                    Claim +{q.reward} ⬡
-                  </Text>
-                </PressableScale>
+                />
               ) : q.claimed ? (
-                <View style={styles.questCheck}>
-                  <Ionicons name="checkmark-circle" size={18} color={c.success} />
-                </View>
+                <Ionicons name="checkmark-circle" size={24} color={palette.grass} />
               ) : (
-                <Text style={[styles.questProgress, { color: c.textTertiary }]}>
+                <Text style={[styles.questProgress, { color: c.textSecondary }]}>
                   {`${q.progress}/${q.target}`}
                 </Text>
               )}
@@ -525,31 +475,51 @@ export default function DiscoverScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: c.bg }]}>
-      {/* Segmented control */}
-      <View style={[styles.segmented, { backgroundColor: c.bgTertiary }]}>
+      {/* Hero header */}
+      <Text style={[styles.heroTitle, { color: c.text }]}>Discover</Text>
+
+      {/* Segments — pills chunky */}
+      <View style={styles.segmented}>
         {([
           { key: "feed" as const, label: "Feed" },
           { key: "leaderboard" as const, label: "Rankings" },
           { key: "team" as const, label: "Team" },
-        ]).map((s) => (
-          <Pressable
-            key={s.key}
-            style={[
-              styles.segment,
-              tab === s.key && [{ backgroundColor: c.card }, shadows.sm],
-            ]}
-            onPress={() => setTab(s.key)}
-          >
-            <Text
-              style={[
-                styles.segmentText,
-                { color: tab === s.key ? c.text : c.textTertiary },
+        ]).map((s) => {
+          const active = tab === s.key;
+          return (
+            <Pressable
+              key={s.key}
+              style={({ pressed }) => [
+                styles.segment,
+                active
+                  ? {
+                      backgroundColor: palette.grass,
+                      borderBottomWidth: pressed ? edges.button - 2 : edges.button,
+                      borderBottomColor: palette.grassDark,
+                      transform: [{ translateY: pressed ? 2 : 0 }],
+                    }
+                  : {
+                      backgroundColor: c.card,
+                      borderWidth: 1,
+                      borderColor: c.cardBorder,
+                    },
               ]}
+              onPress={() => {
+                hapticSelection();
+                setTab(s.key);
+              }}
             >
-              {s.label}
-            </Text>
-          </Pressable>
-        ))}
+              <Text
+                style={[
+                  styles.segmentText,
+                  { color: active ? palette.white : c.textSecondary },
+                ]}
+              >
+                {s.label}
+              </Text>
+            </Pressable>
+          );
+        })}
       </View>
 
       {tab === "feed" ? (
@@ -578,14 +548,12 @@ export default function DiscoverScreen() {
                 <Text style={[styles.emptyText, { color: c.textTertiary }]}>
                   The world is quiet… be the first to drop a photo today.
                 </Text>
-                <PressableScale
-                  style={[styles.emptyButton, { backgroundColor: c.primary }, shadows.md]}
+                <GameButton
+                  label="Open the map"
+                  icon="map"
                   onPress={() => router.push("/(tabs)")}
-                >
-                  <Text style={[styles.emptyButtonText, { color: c.primaryText }]}>
-                    Open the map
-                  </Text>
-                </PressableScale>
+                  style={{ alignSelf: "center" }}
+                />
               </View>
             }
             ListFooterComponent={
@@ -603,34 +571,45 @@ export default function DiscoverScreen() {
         <View style={styles.leaderboardContainer}>
           {/* Sous-segments */}
           <View style={styles.lbSegments}>
-            {LEADERBOARD_KINDS.map((k) => (
-              <Pressable
-                key={k.kind}
-                style={[
-                  styles.lbSegment,
-                  {
-                    backgroundColor: lbKind === k.kind ? c.primary : c.bgTertiary,
-                  },
-                ]}
-                onPress={() => setLbKind(k.kind)}
-              >
-                <Text
+            {LEADERBOARD_KINDS.map((k) => {
+              const active = lbKind === k.kind;
+              return (
+                <Pressable
+                  key={k.kind}
                   style={[
-                    styles.lbSegmentText,
-                    { color: lbKind === k.kind ? c.primaryText : c.textSecondary },
+                    styles.lbSegment,
+                    active
+                      ? { backgroundColor: palette.grass, borderBottomWidth: 3, borderBottomColor: palette.grassDark }
+                      : { backgroundColor: c.card, borderWidth: 1, borderColor: c.cardBorder },
                   ]}
+                  onPress={() => {
+                    hapticSelection();
+                    setLbKind(k.kind);
+                  }}
                 >
-                  {k.label}
-                </Text>
-              </Pressable>
-            ))}
+                  <Ionicons
+                    name={k.icon}
+                    size={13}
+                    color={active ? palette.white : c.textTertiary}
+                  />
+                  <Text
+                    style={[
+                      styles.lbSegmentText,
+                      { color: active ? palette.white : c.textSecondary },
+                    ]}
+                  >
+                    {k.label}
+                  </Text>
+                </Pressable>
+              );
+            })}
           </View>
 
           {lbLoading ? (
             <ListSkeleton rows={6} />
           ) : (
             <FlatList
-              data={lbRows}
+              data={lbRows.slice(3)}
               keyExtractor={(row) => row.user_id}
               renderItem={({ item: row }) => (
                 <LeaderboardLine row={row} isMe={row.user_id === userId} colors={c} />
@@ -639,10 +618,15 @@ export default function DiscoverScreen() {
               maxToRenderPerBatch={6}
               initialNumToRender={10}
               removeClippedSubviews
+              ListHeaderComponent={
+                lbRows.length > 0 ? <Podium rows={lbRows} meId={userId} colors={c} /> : null
+              }
               ListEmptyComponent={
-                <Text style={[styles.emptyText, { color: c.textTertiary }]}>
-                  The throne is still empty — claim a tile and your name starts the list.
-                </Text>
+                lbRows.length === 0 ? (
+                  <Text style={[styles.emptyText, { color: c.textTertiary }]}>
+                    The throne is still empty — claim a tile and your name starts the list.
+                  </Text>
+                ) : null
               }
               contentContainerStyle={styles.lbContent}
             />
@@ -653,42 +637,51 @@ export default function DiscoverScreen() {
       ) : challenge?.my_team ? (
         // ─── Avec team ───
         <ScrollView contentContainerStyle={styles.teamContent}>
-          <View style={[styles.teamHeader, { backgroundColor: c.bgSecondary, borderColor: c.cardBorder }]}>
-            <Text style={styles.teamHeaderEmoji}>{challenge.my_team.emoji}</Text>
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.teamHeaderName, { color: c.text }]} numberOfLines={1}>
-                {challenge.my_team.name}
-              </Text>
-              <Text style={[styles.teamHeaderMeta, { color: c.textTertiary }]}>
-                {challenge.my_team.member_count} member{challenge.my_team.member_count > 1 ? "s" : ""} · rank #{challenge.my_team.rank}
-              </Text>
+          <View
+            style={[
+              styles.teamCard,
+              shadows.md,
+              { backgroundColor: c.card, borderColor: c.cardBorder },
+            ]}
+          >
+            <View style={styles.teamCardHeader}>
+              <View style={[styles.teamGlyphPastille, { backgroundColor: soft(palette.grass) }]}>
+                <TeamGlyph value={challenge.my_team.emoji} size={26} color={palette.grass} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.teamHeaderName, { color: c.text }]} numberOfLines={1}>
+                  {challenge.my_team.name}
+                </Text>
+                <Text style={[styles.teamHeaderMeta, { color: c.textTertiary }]}>
+                  {challenge.my_team.member_count} member{challenge.my_team.member_count > 1 ? "s" : ""} · rank #{challenge.my_team.rank}
+                </Text>
+              </View>
+              <MemberStack count={challenge.my_team.member_count} teamId={challenge.my_team.team_id} border={c.card} />
             </View>
-          </View>
 
-          {/* Défi de la semaine */}
-          <View style={[styles.challengeCard, { backgroundColor: c.primarySoft }]}>
+            {/* Défi de la semaine */}
             <Text style={[styles.challengeLabel, { color: c.text }]}>{challenge.label}</Text>
-            <View style={styles.challengeStats}>
-              <View style={styles.challengeStat}>
-                <Text style={[styles.challengeValue, { color: c.primary }]}>{challenge.my_team.score}</Text>
-                <Text style={[styles.challengeStatLabel, { color: c.textSecondary }]}>Score</Text>
-              </View>
-              <View style={styles.challengeStat}>
-                <Text style={[styles.challengeValue, { color: c.primary }]}>#{challenge.my_team.rank}</Text>
-                <Text style={[styles.challengeStatLabel, { color: c.textSecondary }]}>Rank</Text>
-              </View>
-              <View style={styles.challengeStat}>
-                <Text style={[styles.challengeValue, { color: c.primary }]}>{remainingLabel(challenge.ends_at)}</Text>
-                <Text style={[styles.challengeStatLabel, { color: c.textSecondary }]}>Remaining</Text>
-              </View>
+            <ProgressBar
+              progress={
+                challenge.top[0] && challenge.top[0].score > 0
+                  ? challenge.my_team.score / challenge.top[0].score
+                  : 0
+              }
+              color={palette.gold}
+            />
+            <View style={styles.challengeChips}>
+              <StatChip icon="trophy" value={challenge.my_team.score} label="pts" color={palette.gold} />
+              <StatChip icon="podium" value={`#${challenge.my_team.rank}`} color={palette.grass} />
+              <StatChip icon="time" value={remainingLabel(challenge.ends_at)} color={palette.diamond} />
             </View>
-            <Text style={[styles.podiumHint, { color: c.textSecondary }]}>
+            <Text style={[styles.podiumHint, { color: c.textTertiary }]}>
               Podium Monday: +200/+100/+50 ⬡ per member
             </Text>
           </View>
 
           {/* Top 10 */}
-          <Text style={[styles.teamSectionTitle, { color: c.text }]}>Top 10</Text>
+          <SectionHeader title="Top 10" color={palette.gold} />
+          <View style={{ height: spacing.sm }} />
           {challenge.top.map((t) => {
             const isMine = t.team_id === challenge.my_team!.team_id;
             return (
@@ -718,7 +711,7 @@ export default function DiscoverScreen() {
                   <Text style={[styles.teamRowMembers, { color: c.textTertiary }]}>{t.member_count}</Text>
                   <Ionicons name="person" size={12} color={c.textTertiary} />
                 </View>
-                <Text style={[styles.lbValue, { color: c.primary }]}>{t.score}</Text>
+                <StatChip icon="trophy" value={t.score} color={t.rank <= 3 ? palette.gold : palette.grass} />
               </View>
             );
           })}
@@ -730,8 +723,16 @@ export default function DiscoverScreen() {
       ) : (
         // ─── Sans team ───
         <ScrollView contentContainerStyle={styles.teamContent}>
-          <View style={[styles.introCard, { backgroundColor: c.primarySoft }]}>
-            <Text style={styles.introEmoji}>⬡</Text>
+          <View
+            style={[
+              styles.introCard,
+              shadows.md,
+              { backgroundColor: c.card, borderColor: c.cardBorder },
+            ]}
+          >
+            <View style={[styles.introPastille, { backgroundColor: soft(palette.grass) }]}>
+              <Text style={[styles.introGlyph, { color: palette.grass }]}>⬡</Text>
+            </View>
             <Text style={[styles.introTitle, { color: c.text }]}>Join forces to fill the mosaic</Text>
             <Text style={[styles.introText, { color: c.textSecondary }]}>
               Every empire needs allies. Join a team, stack your takeovers and climb the
@@ -740,7 +741,7 @@ export default function DiscoverScreen() {
           </View>
 
           {showCreateForm ? (
-            <View style={[styles.createForm, { backgroundColor: c.bgSecondary, borderColor: c.cardBorder }]}>
+            <View style={[styles.createForm, { backgroundColor: c.card, borderColor: c.cardBorder }]}>
               <TextInput
                 style={[
                   styles.teamInput,
@@ -759,51 +760,48 @@ export default function DiscoverScreen() {
                     key={e}
                     style={[
                       styles.emojiChoice,
-                      { backgroundColor: teamEmoji === e ? c.primary : c.bgTertiary },
+                      teamEmoji === e
+                        ? { backgroundColor: palette.grass, borderBottomWidth: 3, borderBottomColor: palette.grassDark }
+                        : { backgroundColor: c.bgTertiary },
                     ]}
                     onPress={() => setTeamEmoji(e)}
                   >
-                    <TeamGlyph value={e} size={20} color={teamEmoji === e ? c.primaryText : c.text} />
+                    <TeamGlyph value={e} size={20} color={teamEmoji === e ? palette.white : c.text} />
                   </Pressable>
                 ))}
               </View>
               <View style={styles.createActions}>
-                <Pressable
-                  style={[styles.createCancel, { borderColor: c.border }]}
+                <GameButton
+                  label="Cancel"
+                  variant="ghost"
+                  size="md"
                   onPress={() => setShowCreateForm(false)}
-                >
-                  <Text style={{ color: c.textSecondary, fontWeight: fonts.weights.medium }}>Cancel</Text>
-                </Pressable>
-                <PressableScale
-                  style={[
-                    styles.createConfirm,
-                    {
-                      backgroundColor: c.primary,
-                      opacity: teamBusy || !teamName.trim() ? 0.6 : 1,
-                    },
-                  ]}
-                  onPress={handleCreateTeam}
+                  style={{ flex: 1 }}
+                />
+                <GameButton
+                  label="Create"
+                  size="md"
+                  loading={teamBusy}
                   disabled={teamBusy || !teamName.trim()}
-                >
-                  <Text style={{ color: c.primaryText, fontWeight: fonts.weights.bold }}>Create</Text>
-                </PressableScale>
+                  onPress={handleCreateTeam}
+                  style={{ flex: 1 }}
+                />
               </View>
             </View>
           ) : (
-            <PressableScale
-              style={[
-                styles.createTeamButton,
-                { backgroundColor: c.primary },
-                shadows.md,
-              ]}
+            <GameButton
+              label="Create a team"
+              icon="add-circle"
               onPress={() => setShowCreateForm(true)}
-            >
-              <Text style={[styles.createTeamText, { color: c.primaryText }]}>Create a team</Text>
-            </PressableScale>
+              style={{ marginBottom: spacing.lg }}
+            />
           )}
 
           {teams.length > 0 && (
-            <Text style={[styles.teamSectionTitle, { color: c.text }]}>Join a team</Text>
+            <>
+              <SectionHeader title="Join a team" />
+              <View style={{ height: spacing.sm }} />
+            </>
           )}
           {teams.map((t) => (
             <View key={t.id} style={[styles.teamRow, { borderBottomColor: c.separator }]}>
@@ -815,16 +813,12 @@ export default function DiscoverScreen() {
                 <Text style={[styles.teamRowMembers, { color: c.textTertiary }]}>{t.member_count}</Text>
                 <Ionicons name="person" size={12} color={c.textTertiary} />
               </View>
-              <PressableScale
-                style={[
-                  styles.joinButton,
-                  { backgroundColor: c.primary, opacity: teamBusy ? 0.7 : 1 },
-                ]}
-                onPress={() => handleJoinTeam(t)}
+              <GameButton
+                label="Join"
+                size="md"
                 disabled={teamBusy}
-              >
-                <Text style={[styles.joinText, { color: c.primaryText }]}>Join</Text>
-              </PressableScale>
+                onPress={() => handleJoinTeam(t)}
+              />
             </View>
           ))}
         </ScrollView>
@@ -835,6 +829,104 @@ export default function DiscoverScreen() {
         title="Link an account to join a team"
         onClose={() => setShowLinkSheet(false)}
       />
+    </View>
+  );
+}
+
+// ─── Membres empilés (visuel — pas de liste membre côté client) ───
+const MEMBER_TINTS = [palette.grass, palette.diamond, palette.amber, palette.redstone, palette.gold];
+
+function MemberStack({ count, teamId, border }: { count: number; teamId: string; border: string }) {
+  const shown = Math.min(count, 4);
+  return (
+    <View style={styles.memberStack}>
+      {Array.from({ length: shown }).map((_, i) => (
+        <View
+          key={`${teamId}-${i}`}
+          style={[
+            styles.memberDot,
+            { backgroundColor: MEMBER_TINTS[i % MEMBER_TINTS.length], borderColor: border, marginLeft: i === 0 ? 0 : -10 },
+          ]}
+        >
+          <Ionicons name="person" size={12} color={palette.white} />
+        </View>
+      ))}
+      {count > shown && (
+        <Text style={styles.memberMore}>+{count - shown}</Text>
+      )}
+    </View>
+  );
+}
+
+// ─── Podium top 3 ─────────────────────────────────────────
+const MEDALS = [
+  { fill: palette.gold, edge: palette.goldDark },
+  { fill: palette.silver, edge: "#9A9A9A" },
+  { fill: palette.bronze, edge: "#A5672A" },
+] as const;
+
+function PodiumColumn({
+  row,
+  place,
+  isMe,
+  colors: c,
+}: {
+  row?: LeaderboardRow;
+  place: 0 | 1 | 2; // index médaille
+  isMe: boolean;
+  colors: ThemeColors;
+}) {
+  const avatarSize = place === 0 ? 56 : 44;
+  const platformHeight = place === 0 ? 56 : place === 1 ? 40 : 30;
+  const medal = MEDALS[place];
+  return (
+    <View style={styles.podiumCol}>
+      {row ? (
+        <>
+          <Avatar name={row.username} userId={row.user_id} url={row.avatar_url} size={avatarSize} />
+          <View style={[styles.medal, { backgroundColor: medal.fill, borderBottomColor: medal.edge }]}>
+            <Text style={styles.medalText}>{row.rank}</Text>
+          </View>
+          <Text
+            style={[
+              styles.podiumName,
+              { color: c.text, fontWeight: isMe ? fonts.weights.heavy : fonts.weights.bold },
+            ]}
+            numberOfLines={1}
+          >
+            {row.username}
+            {isMe ? " (you)" : ""}
+          </Text>
+          <Text style={[styles.podiumScore, { color: palette.goldDark }]}>{row.value}</Text>
+        </>
+      ) : (
+        <View style={{ height: avatarSize + 52 }} />
+      )}
+      <View
+        style={[
+          styles.platform,
+          { height: platformHeight, backgroundColor: soft(medal.fill) },
+        ]}
+      />
+    </View>
+  );
+}
+
+function Podium({
+  rows,
+  meId,
+  colors: c,
+}: {
+  rows: LeaderboardRow[];
+  meId: string | null;
+  colors: ThemeColors;
+}) {
+  const [first, second, third] = rows;
+  return (
+    <View style={styles.podium}>
+      <PodiumColumn row={second} place={1} isMe={second?.user_id === meId} colors={c} />
+      <PodiumColumn row={first} place={0} isMe={first?.user_id === meId} colors={c} />
+      <PodiumColumn row={third} place={2} isMe={third?.user_id === meId} colors={c} />
     </View>
   );
 }
@@ -856,25 +948,8 @@ const LeaderboardLine = memo(function LeaderboardLine({
         isMe && { backgroundColor: c.primarySoft, borderRadius: radii.sm },
       ]}
     >
-      <Text style={[styles.lbRank, { color: row.rank <= 3 ? palette.gold : c.textSecondary }]}>
-        {row.rank}
-      </Text>
-      {row.avatar_url ? (
-        <Image
-          source={{ uri: row.avatar_url }}
-          style={styles.lbAvatar}
-          contentFit="cover"
-          transition={150}
-          cachePolicy="memory-disk"
-          recyclingKey={row.user_id}
-        />
-      ) : (
-        <View style={[styles.lbAvatar, styles.avatarFallback, { backgroundColor: c.primary }]}>
-          <Text style={styles.lbAvatarInitial}>
-            {row.username?.charAt(0).toUpperCase() ?? "?"}
-          </Text>
-        </View>
-      )}
+      <Text style={[styles.lbRank, { color: c.textSecondary }]}>{row.rank}</Text>
+      <Avatar name={row.username} userId={row.user_id} url={row.avatar_url} size={32} />
       <Text
         style={[styles.lbUsername, { color: c.text, fontWeight: isMe ? fonts.weights.bold : fonts.weights.medium }]}
         numberOfLines={1}
@@ -882,89 +957,55 @@ const LeaderboardLine = memo(function LeaderboardLine({
         {row.username}
         {isMe ? " (you)" : ""}
       </Text>
-      <Text style={[styles.lbValue, { color: c.primary }]}>{row.value}</Text>
+      <StatChip icon="trophy" value={row.value} color={palette.grass} />
     </View>
   );
 });
 
 const styles = StyleSheet.create({
   container: { flex: 1, paddingTop: 60 },
+  heroTitle: {
+    fontSize: fonts.sizes.hero,
+    fontWeight: fonts.weights.heavy,
+    letterSpacing: fonts.letterSpacing.tight,
+    paddingHorizontal: spacing.base,
+    marginBottom: spacing.md,
+  },
   emptyWrap: { alignItems: "center", gap: spacing.lg, marginTop: spacing.xxl },
   emptyText: {
     textAlign: "center",
     fontSize: fonts.sizes.base,
     paddingHorizontal: spacing.xl,
   },
-  emptyButton: {
-    borderRadius: radii.full,
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.xl,
-  },
-  emptyButtonText: { fontSize: fonts.sizes.base, fontWeight: fonts.weights.semibold },
 
   segmented: {
     flexDirection: "row",
     marginHorizontal: spacing.base,
-    marginBottom: spacing.md,
-    borderRadius: radii.md,
-    padding: 3,
+    marginBottom: spacing.base,
+    gap: spacing.sm,
   },
   segment: {
     flex: 1,
-    paddingVertical: spacing.sm,
-    borderRadius: radii.md - 3,
-    alignItems: "center",
-  },
-  segmentText: { fontSize: fonts.sizes.base, fontWeight: fonts.weights.semibold },
-
-  feedContent: { paddingBottom: 40 },
-
-  questsBanner: {
-    marginHorizontal: spacing.base,
-    marginBottom: spacing.md,
-    borderRadius: radii.md,
-    borderWidth: 1,
-    padding: spacing.md,
-  },
-  questsHeader: {
-    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
-    marginBottom: spacing.sm,
-  },
-  questsTitle: { fontSize: fonts.sizes.base, fontWeight: fonts.weights.bold },
-  questRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.md,
-    paddingVertical: spacing.xs + 2,
-  },
-  questInfo: { flex: 1 },
-  questLabel: { fontSize: fonts.sizes.sm, marginBottom: spacing.xs },
-  progressTrack: { height: 6, borderRadius: 3, overflow: "hidden" },
-  progressFill: { height: 6, borderRadius: 3 },
-  questProgress: { fontSize: fonts.sizes.sm, fontWeight: fonts.weights.semibold, minWidth: 40, textAlign: "right" },
-  questCheck: { minWidth: 40, alignItems: "flex-end" },
-  claimButton: {
+    height: 40,
     borderRadius: radii.full,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs + 2,
-  },
-  claimText: { fontSize: fonts.sizes.xs, fontWeight: fonts.weights.bold },
-
-  card: { marginBottom: spacing.lg },
-  cardHeader: {
-    flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: spacing.base,
-    paddingVertical: spacing.sm + 2,
-    gap: spacing.sm,
+    justifyContent: "center",
   },
-  cardAvatar: { width: 36, height: 36, borderRadius: 18 },
-  avatarFallback: { justifyContent: "center", alignItems: "center" },
-  avatarInitial: { color: "#fff", fontSize: fonts.sizes.base, fontWeight: fonts.weights.bold },
-  cardHeaderText: { flex: 1 },
-  cardUsername: { fontSize: fonts.sizes.sm, fontWeight: fonts.weights.semibold },
-  cardTime: { fontSize: fonts.sizes.xs, marginTop: 1 },
+  segmentText: {
+    fontSize: fonts.sizes.base,
+    fontWeight: fonts.weights.bold,
+    letterSpacing: fonts.letterSpacing.tight,
+  },
+
+  feedContent: { paddingBottom: TAB_BAR_SPACE + spacing.base },
+  feedRow: {
+    marginHorizontal: spacing.base,
+    marginBottom: spacing.base,
+  },
   shieldBadge: {
+    position: "absolute",
+    top: 12,
+    right: 12,
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
@@ -972,32 +1013,40 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm,
     paddingVertical: 3,
   },
-  shieldBadgeText: { fontSize: fonts.sizes.xs, fontWeight: fonts.weights.semibold },
-  locateButton: { padding: spacing.xs },
-  cardImage: { width: IMAGE_SIZE, height: IMAGE_SIZE },
-  cardFooter: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: spacing.base,
-    paddingVertical: spacing.sm + 2,
-  },
-  voteButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.xs,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderRadius: radii.full,
-  },
-  voteCount: { fontSize: fonts.sizes.sm, fontWeight: fonts.weights.semibold },
-  takeButton: {
-    borderRadius: radii.lg,
-    paddingHorizontal: spacing.base,
-    paddingVertical: spacing.sm,
-  },
-  takeText: { fontSize: fonts.sizes.sm, fontWeight: fonts.weights.semibold },
+  shieldBadgeText: { fontSize: fonts.sizes.xs, fontWeight: fonts.weights.bold },
 
+  // ─── Quests ───
+  questsWrap: {
+    marginHorizontal: spacing.base,
+    marginBottom: spacing.sm,
+  },
+  questCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+    borderRadius: radii.lg,
+    borderWidth: 1,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+  },
+  questPastille: {
+    width: 40,
+    height: 40,
+    borderRadius: radii.md,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  questInfo: { flex: 1, gap: 6 },
+  questLabel: { fontSize: fonts.sizes.sm, fontWeight: fonts.weights.bold },
+  questDoneText: { fontSize: fonts.sizes.xs, fontWeight: fonts.weights.medium },
+  questProgress: {
+    fontSize: fonts.sizes.sm,
+    fontWeight: fonts.weights.bold,
+    minWidth: 40,
+    textAlign: "right",
+  },
+
+  // ─── Rankings ───
   leaderboardContainer: { flex: 1 },
   lbSegments: {
     flexDirection: "row",
@@ -1006,12 +1055,42 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
   },
   lbSegment: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
     borderRadius: radii.full,
     paddingHorizontal: spacing.base,
-    paddingVertical: spacing.xs + 2,
+    height: 34,
   },
-  lbSegmentText: { fontSize: fonts.sizes.sm, fontWeight: fonts.weights.semibold },
-  lbContent: { paddingHorizontal: spacing.base, paddingBottom: 40 },
+  lbSegmentText: { fontSize: fonts.sizes.sm, fontWeight: fonts.weights.bold },
+  lbContent: { paddingHorizontal: spacing.base, paddingBottom: TAB_BAR_SPACE + spacing.base },
+
+  podium: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    gap: spacing.sm,
+    marginBottom: spacing.lg,
+    marginTop: spacing.sm,
+  },
+  podiumCol: { flex: 1, alignItems: "center" },
+  medal: {
+    width: 26,
+    height: 26,
+    borderRadius: radii.sm,
+    borderBottomWidth: 3,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: -13,
+  },
+  medalText: { color: palette.white, fontWeight: fonts.weights.heavy, fontSize: 13 },
+  podiumName: { fontSize: fonts.sizes.sm, marginTop: spacing.xs, maxWidth: "100%" },
+  podiumScore: { fontSize: fonts.sizes.sm, fontWeight: fonts.weights.heavy, marginBottom: spacing.sm },
+  platform: {
+    alignSelf: "stretch",
+    borderTopLeftRadius: radii.md,
+    borderTopRightRadius: radii.md,
+  },
+
   lbRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -1020,91 +1099,108 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  lbRank: { width: 28, fontSize: fonts.sizes.base, fontWeight: fonts.weights.bold, textAlign: "center" },
-  lbAvatar: { width: 32, height: 32, borderRadius: 16 },
-  lbAvatarInitial: { color: "#fff", fontSize: fonts.sizes.sm, fontWeight: fonts.weights.bold },
+  lbRank: { width: 28, fontSize: fonts.sizes.base, fontWeight: fonts.weights.heavy, textAlign: "center" },
   lbUsername: { flex: 1, fontSize: fonts.sizes.base },
-  lbValue: { fontSize: fonts.sizes.base, fontWeight: fonts.weights.bold },
 
   // ─── Team ───
-  teamContent: { paddingHorizontal: spacing.base, paddingBottom: 40 },
+  teamContent: { paddingHorizontal: spacing.base, paddingBottom: TAB_BAR_SPACE + spacing.base },
+  teamCard: {
+    borderRadius: radii.xl,
+    borderWidth: 1,
+    padding: spacing.base,
+    marginBottom: spacing.lg,
+    gap: spacing.md,
+  },
+  teamCardHeader: { flexDirection: "row", alignItems: "center", gap: spacing.md },
+  teamGlyphPastille: {
+    width: 48,
+    height: 48,
+    borderRadius: radii.md,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  teamHeaderName: { fontSize: fonts.sizes.lg, fontWeight: fonts.weights.heavy },
+  teamHeaderMeta: { fontSize: fonts.sizes.sm, marginTop: 2 },
+  challengeLabel: { fontSize: fonts.sizes.base, fontWeight: fonts.weights.bold },
+  challengeChips: { flexDirection: "row", gap: spacing.sm, flexWrap: "wrap" },
+  podiumHint: { fontSize: fonts.sizes.xs },
+  memberStack: { flexDirection: "row", alignItems: "center" },
+  memberDot: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    borderWidth: 2,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  memberMore: {
+    fontSize: fonts.sizes.xs,
+    fontWeight: fonts.weights.bold,
+    color: palette.gray500,
+    marginLeft: 4,
+  },
+
   introCard: {
-    borderRadius: radii.lg, padding: spacing.lg, alignItems: "center",
+    borderRadius: radii.xl,
+    borderWidth: 1,
+    padding: spacing.lg,
+    alignItems: "center",
     marginBottom: spacing.base,
   },
-  introEmoji: { fontSize: 40, marginBottom: spacing.sm },
+  introPastille: {
+    width: 64,
+    height: 64,
+    borderRadius: radii.lg,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: spacing.md,
+  },
+  introGlyph: { fontSize: 30, fontWeight: fonts.weights.heavy },
   introTitle: {
-    fontSize: fonts.sizes.lg, fontWeight: fonts.weights.bold,
-    textAlign: "center", marginBottom: spacing.sm,
+    fontSize: fonts.sizes.lg,
+    fontWeight: fonts.weights.heavy,
+    textAlign: "center",
+    marginBottom: spacing.sm,
+    letterSpacing: fonts.letterSpacing.tight,
   },
   introText: {
-    fontSize: fonts.sizes.sm, textAlign: "center",
+    fontSize: fonts.sizes.sm,
+    textAlign: "center",
     lineHeight: fonts.sizes.sm * fonts.lineHeights.relaxed,
   },
-  createTeamButton: {
-    borderRadius: radii.full, padding: spacing.base, alignItems: "center",
-    marginBottom: spacing.lg,
-  },
-  createTeamText: { fontSize: fonts.sizes.base, fontWeight: fonts.weights.semibold },
   createForm: {
-    borderRadius: radii.md, borderWidth: 1, padding: spacing.md,
-    marginBottom: spacing.lg, gap: spacing.md,
+    borderRadius: radii.lg,
+    borderWidth: 1,
+    padding: spacing.base,
+    marginBottom: spacing.lg,
+    gap: spacing.md,
   },
   teamInput: {
-    borderWidth: 1, borderRadius: radii.sm, padding: spacing.md,
+    borderWidth: 1,
+    borderRadius: radii.md,
+    padding: spacing.md,
     fontSize: fonts.sizes.base,
   },
   emojiRow: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
   emojiChoice: {
-    width: 40, height: 40, borderRadius: radii.sm,
-    justifyContent: "center", alignItems: "center",
+    width: 40,
+    height: 40,
+    borderRadius: radii.md,
+    justifyContent: "center",
+    alignItems: "center",
   },
-  createActions: { flexDirection: "row", justifyContent: "flex-end", gap: spacing.sm },
-  createCancel: {
-    borderWidth: 1, borderRadius: radii.sm,
-    paddingHorizontal: spacing.base, paddingVertical: spacing.sm,
-  },
-  createConfirm: {
-    borderRadius: radii.sm,
-    paddingHorizontal: spacing.lg, paddingVertical: spacing.sm,
-  },
-  teamSectionTitle: {
-    fontSize: fonts.sizes.md, fontWeight: fonts.weights.bold,
-    marginBottom: spacing.sm,
-  },
+  createActions: { flexDirection: "row", gap: spacing.sm },
   teamRow: {
-    flexDirection: "row", alignItems: "center", gap: spacing.md,
-    paddingVertical: spacing.md, paddingHorizontal: spacing.sm,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.sm,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   teamRowName: { flex: 1, fontSize: fonts.sizes.base, fontWeight: fonts.weights.medium },
   teamRowMembersWrap: { flexDirection: "row", alignItems: "center", gap: 3 },
   teamRowMembers: { fontSize: fonts.sizes.sm },
-  joinButton: {
-    borderRadius: radii.full,
-    paddingHorizontal: spacing.md, paddingVertical: spacing.xs + 2,
-  },
-  joinText: { fontSize: fonts.sizes.sm, fontWeight: fonts.weights.semibold },
-  teamHeader: {
-    flexDirection: "row", alignItems: "center", gap: spacing.md,
-    borderRadius: radii.md, borderWidth: 1, padding: spacing.md,
-    marginBottom: spacing.md,
-  },
-  teamHeaderEmoji: { fontSize: 32 },
-  teamHeaderName: { fontSize: fonts.sizes.lg, fontWeight: fonts.weights.bold },
-  teamHeaderMeta: { fontSize: fonts.sizes.sm, marginTop: 2 },
-  challengeCard: {
-    borderRadius: radii.lg, padding: spacing.lg, marginBottom: spacing.lg,
-  },
-  challengeLabel: {
-    fontSize: fonts.sizes.base, fontWeight: fonts.weights.bold,
-    textAlign: "center", marginBottom: spacing.md,
-  },
-  challengeStats: { flexDirection: "row", justifyContent: "space-around", marginBottom: spacing.md },
-  challengeStat: { alignItems: "center" },
-  challengeValue: { fontSize: fonts.sizes.lg, fontWeight: fonts.weights.heavy },
-  challengeStatLabel: { fontSize: fonts.sizes.xs, marginTop: 2 },
-  podiumHint: { fontSize: fonts.sizes.xs, textAlign: "center" },
   leaveButton: { alignItems: "center", marginTop: spacing.lg, padding: spacing.sm },
   leaveText: { fontSize: fonts.sizes.sm },
 });

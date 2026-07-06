@@ -12,8 +12,9 @@ import MapLegend from "../../src/components/MapLegend";
 import TargetPin from "../../src/components/TargetPin";
 import TileLayer from "../../src/components/TileLayer";
 import RushBanner from "../../src/components/RushBanner";
-import PressableScale from "../../src/components/PressableScale";
 import IconLabel from "../../src/components/IconLabel";
+import GameButton from "../../src/components/GameButton";
+import { TAB_BAR_SPACE } from "../../src/components/GameTabBar";
 import { useSquares, SquareWithImage } from "../../src/hooks/useSquares";
 import { getDailyTargets, DailyTarget } from "../../src/lib/economy";
 import { useSWR } from "../../src/lib/swr";
@@ -199,8 +200,7 @@ export default function MapScreen() {
         icon: "camera" as const,
         label: "Claim this tile",
         sub: "Free — you're standing on it",
-        bg: palette.grass,
-        fg: "#FFFFFF",
+        variant: "primary" as const,
         route: `/upload?cellId=${myCellId}`,
       };
     }
@@ -213,16 +213,14 @@ export default function MapScreen() {
             icon: "flame" as const,
             label: "Revive this tile",
             sub: "Keep your streak alive",
-            bg: palette.warning,
-            fg: "#FFFFFF",
+            variant: "gold" as const,
             route: `/square/${sq.id}`,
           }
         : {
             icon: "checkmark-circle" as const,
             label: "Your tile",
             sub: undefined,
-            bg: "rgba(28, 28, 30, 0.92)",
-            fg: "#FFFFFF",
+            variant: "dark" as const,
             route: `/square/${sq.id}`,
           };
     }
@@ -230,8 +228,7 @@ export default function MapScreen() {
       icon: "flag" as const,
       label: "Take over",
       sub: `Costs ${minTakePrice(sq.last_price ?? 0)} ⬡ — you're on site`,
-      bg: "rgba(28, 28, 30, 0.92)",
-      fg: "#FFFFFF",
+      variant: "dark" as const,
       route: `/square/${sq.id}`,
     };
   }, [userLocation, myCellId, standingSquare, meId]);
@@ -459,6 +456,9 @@ export default function MapScreen() {
 
   const center = userLocation ?? DEFAULT_CENTER;
 
+  // Base des FABs : au-dessus de la tab bar flottante, et du CTA s'il est là
+  const fabBase = insets.bottom + TAB_BAR_SPACE + (standingCta ? 84 : 24);
+
   return (
     <View style={styles.container}>
       <MapboxGL.MapView
@@ -624,38 +624,37 @@ export default function MapScreen() {
               hitSlop={10}
               accessibilityLabel="Dismiss hint"
             >
-              <Ionicons name="close" size={16} color="rgba(255,255,255,0.7)" />
+              <Ionicons name="close" size={16} color="rgba(255,255,255,0.85)" />
             </Pressable>
           </View>
+          <View style={styles.hintArrow} />
         </View>
       )}
 
       {/* CTA contextuel — la case où je me trouve, action évidente */}
       {standingCta && (
-        <View style={[styles.ctaWrap, { bottom: insets.bottom + 24 }]} pointerEvents="box-none">
-          <PressableScale
-            style={[styles.ctaPill, { backgroundColor: standingCta.bg }]}
-            onPress={() => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              router.push(standingCta.route);
-            }}
-            accessibilityLabel={standingCta.label}
-          >
-            <IconLabel
-              icon={standingCta.icon}
-              label={standingCta.label}
-              color={standingCta.fg}
-              size={16}
-              textStyle={styles.ctaText}
-            />
-            {standingCta.sub && <Text style={styles.ctaSub}>{standingCta.sub}</Text>}
-          </PressableScale>
+        <View
+          style={[styles.ctaWrap, { bottom: insets.bottom + TAB_BAR_SPACE + 12 }]}
+          pointerEvents="box-none"
+        >
+          <GameButton
+            icon={standingCta.icon}
+            label={standingCta.label}
+            sub={standingCta.sub}
+            variant={standingCta.variant}
+            onPress={() => router.push(standingCta.route)}
+          />
         </View>
       )}
 
       {/* Objectifs du jour — carte compacte en bas à gauche, au-dessus du CTA */}
       {targets && targets.length > 0 && (
-        <View style={[styles.targetsWrap, { bottom: insets.bottom + (standingCta ? 84 : 24) }]}>
+        <View
+          style={[
+            styles.targetsWrap,
+            { bottom: insets.bottom + TAB_BAR_SPACE + (standingCta ? 84 : 16) },
+          ]}
+        >
           {targetsCollapsed ? (
             <Pressable
               style={({ pressed }) => [styles.targetsChip, { opacity: pressed ? 0.8 : 1 }]}
@@ -674,6 +673,7 @@ export default function MapScreen() {
           ) : (
             <View style={styles.targetsCard}>
               <Pressable style={styles.targetsHeader} onPress={() => setTargetsCollapsed(true)}>
+                <View style={styles.targetsTitleBar} />
                 <Text style={styles.targetsTitle}>Today's targets</Text>
                 <Ionicons name="chevron-down" size={14} color="rgba(255,255,255,0.55)" />
               </Pressable>
@@ -716,7 +716,7 @@ export default function MapScreen() {
           styles.locateFab,
           styles.fabShell,
           {
-            bottom: insets.bottom + (userLocation ? 144 : 84),
+            bottom: fabBase + (userLocation ? 120 : 60),
             transform: [{ scale: helpFabScale }],
           },
         ]}
@@ -739,7 +739,7 @@ export default function MapScreen() {
         style={({ pressed }) => [
           styles.locateFab,
           {
-            bottom: insets.bottom + (userLocation ? 84 : 24),
+            bottom: fabBase + (userLocation ? 60 : 0),
             opacity: pressed ? 0.8 : 1,
           },
           photosDimmed && styles.fabActive,
@@ -760,7 +760,7 @@ export default function MapScreen() {
         <Pressable
           style={({ pressed }) => [
             styles.locateFab,
-            { bottom: insets.bottom + 24, opacity: pressed ? 0.8 : 1 },
+            { bottom: fabBase, opacity: pressed ? 0.8 : 1 },
           ]}
           onPress={() => {
             cameraRef.current?.setCamera({
@@ -814,52 +814,46 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
-    backgroundColor: "rgba(28, 28, 30, 0.92)",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.15)",
-    borderRadius: 18,
-    paddingHorizontal: 14,
-    paddingVertical: 9,
-  },
-  hintText: { color: "#FFFFFF", fontSize: 13, fontWeight: "600" },
-
-  ctaWrap: { position: "absolute", left: 72, right: 72, alignItems: "center" },
-  ctaPill: {
-    borderRadius: radii.lg,
-    paddingHorizontal: 26,
-    paddingVertical: 14,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.25)",
+    backgroundColor: palette.grass,
+    borderRadius: radii.xl,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
     shadowColor: "#000",
-    shadowOpacity: 0.3,
+    shadowOpacity: 0.25,
     shadowRadius: 6,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 6,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 5,
   },
-  ctaText: { fontSize: 15, fontWeight: "700" },
-  ctaSub: {
-    color: "rgba(255,255,255,0.7)",
-    fontSize: 11,
-    fontWeight: "500",
-    textAlign: "center",
-    marginTop: 3,
+  hintText: { flexShrink: 1, color: "#FFFFFF", fontSize: 13, fontWeight: "700" },
+  hintArrow: {
+    width: 0,
+    height: 0,
+    marginTop: -1,
+    borderLeftWidth: 8,
+    borderRightWidth: 8,
+    borderTopWidth: 8,
+    borderLeftColor: "transparent",
+    borderRightColor: "transparent",
+    borderTopColor: palette.grass,
   },
+
+  ctaWrap: { position: "absolute", left: 16, right: 16 },
   targetsChip: {
-    backgroundColor: "rgba(28, 28, 30, 0.92)",
+    backgroundColor: "rgba(26,33,38,0.94)",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.15)",
-    borderRadius: 18,
+    borderColor: palette.darkBorder,
+    borderRadius: radii.full,
     paddingHorizontal: 12,
     paddingVertical: 8,
   },
   targetsChipText: { color: "#FFFFFF", fontSize: 13, fontWeight: "700" },
   targetsCard: {
-    backgroundColor: "rgba(28, 28, 30, 0.92)",
+    backgroundColor: "rgba(26,33,38,0.94)",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.15)",
-    borderRadius: 14,
-    padding: 10,
-    width: 232,
+    borderColor: palette.darkBorder,
+    borderRadius: radii.xl,
+    padding: 12,
+    width: 236,
     shadowColor: "#000",
     shadowOpacity: 0.3,
     shadowRadius: 6,
@@ -869,10 +863,16 @@ const styles = StyleSheet.create({
   targetsHeader: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
+    gap: 6,
     marginBottom: 6,
   },
-  targetsTitle: { color: "#FFFFFF", fontSize: 13, fontWeight: "700" },
+  targetsTitleBar: {
+    width: 3,
+    height: 12,
+    borderRadius: radii.full,
+    backgroundColor: palette.gold,
+  },
+  targetsTitle: { flex: 1, color: "#FFFFFF", fontSize: 13, fontWeight: "700" },
   targetRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -884,7 +884,7 @@ const styles = StyleSheet.create({
   targetRowDist: { color: "rgba(255,255,255,0.55)", fontSize: 11, fontWeight: "600" },
   fabActive: {
     backgroundColor: palette.grass,
-    borderColor: "rgba(255,255,255,0.25)",
+    borderColor: palette.grassDark,
   },
   // Coquille animée du FAB help : le Pressable remplit le cercle
   // (pas d'overflow hidden — ça couperait l'ombre iOS)
@@ -900,9 +900,9 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: "rgba(28, 28, 30, 0.92)",
+    backgroundColor: "rgba(17,22,26,0.92)",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.15)",
+    borderColor: palette.darkBorder,
     alignItems: "center",
     justifyContent: "center",
     shadowColor: "#000",

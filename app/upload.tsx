@@ -24,9 +24,9 @@ import { hapticHeavy, hapticSuccess } from "../src/lib/haptics";
 import { sectorLabel } from "../src/lib/sector";
 import ConquestOverlay from "../src/components/ConquestOverlay";
 import LinkAccountSheet, { useIsGuest } from "../src/components/LinkAccountSheet";
-import PressableScale from "../src/components/PressableScale";
-import IconLabel from "../src/components/IconLabel";
-import { palette, useThemeColors, fonts, spacing, radii, shadows } from "../src/theme";
+import GameButton from "../src/components/GameButton";
+import StatChip from "../src/components/StatChip";
+import { palette, useThemeColors, fonts, spacing, radii } from "../src/theme";
 
 // Une seule invite de liaison de compte par lancement d'app.
 let linkPromptShown = false;
@@ -391,6 +391,24 @@ export default function UploadScreen() {
   // Publication libre sans position : bloquant
   const needsLocation = !isTake && !userCoords;
 
+  // Chips contextuelles — secteur, GPS ok, remise raid
+  const infoChips = (
+    <View style={styles.chipsRow}>
+      {sectorCellId ? (
+        <StatChip icon="location" value={sectorLabel(sectorCellId)} color={palette.diamond} />
+      ) : null}
+      {userCoords && !isTake && (
+        <StatChip icon="checkmark-circle" value="GPS locked" color={palette.grass} />
+      )}
+      {onSiteRaid && (
+        <StatChip icon="flag" value="On-site raid −30%" color={palette.redstone} />
+      )}
+      {rushActive && isTake && (
+        <StatChip icon="flame" value="Rush −50%" color={palette.amber} />
+      )}
+    </View>
+  );
+
   return (
     <View style={[styles.container, { backgroundColor: c.bg }]}>
       {needsLocation && (locationError || locating) ? (
@@ -403,21 +421,21 @@ export default function UploadScreen() {
               <Text style={[styles.locationText, { color: c.textSecondary }]}>
                 Piri needs your location: you must be inside the tile to claim it
               </Text>
-              <Pressable
-                style={({ pressed }) => [
-                  styles.choiceButton,
-                  { backgroundColor: c.primary, opacity: pressed ? 0.85 : 1 },
-                  shadows.md,
-                ]}
+              <GameButton
+                icon="navigate"
+                label="Retry"
+                variant="primary"
                 onPress={requestLocation}
-              >
-                <Text style={[styles.choiceText, { color: c.primaryText }]}>Retry</Text>
-              </Pressable>
+              />
             </>
           )}
         </View>
       ) : imageUri ? (
         <View style={styles.previewContainer}>
+          <Text style={[styles.previewTitle, { color: c.text }]}>
+            {isTake ? "Take over" : "Claim this tile"}
+          </Text>
+
           <Image
             source={{ uri: imageUri }}
             style={styles.preview}
@@ -426,23 +444,13 @@ export default function UploadScreen() {
             cachePolicy="memory-disk"
           />
 
+          {infoChips}
+
           {isTake && (
             <View style={styles.priceSection}>
               <Text style={[styles.priceLabel, { color: c.textSecondary }]}>
                 Minimum price: {effectiveMin} ⬡ ({tesselsToEur(effectiveMin)})
-                {rushActive ? " · Rush Hour −50%" : ""}
               </Text>
-              {onSiteRaid && (
-                <IconLabel
-                  icon="flag"
-                  label="On-site raid: −30% applied"
-                  color={palette.grass}
-                  size={14}
-                  gap={4}
-                  textStyle={styles.raidNote}
-                  style={styles.raidNoteRow}
-                />
-              )}
               <TextInput
                 style={[
                   styles.priceInput,
@@ -466,78 +474,52 @@ export default function UploadScreen() {
           )}
 
           <View style={styles.previewActions}>
-            <Pressable
-              style={({ pressed }) => [
-                styles.secondaryButton,
-                { borderColor: c.border, opacity: pressed ? 0.8 : 1 },
-              ]}
+            <GameButton
+              label="Change"
+              variant="ghost"
               onPress={() => setImageUri(null)}
-            >
-              <Text style={[styles.secondaryText, { color: c.text }]}>Change</Text>
-            </Pressable>
-            <PressableScale
-              style={[
-                styles.primaryButton,
-                { backgroundColor: c.primary, opacity: uploading ? 0.85 : 1 },
-                shadows.md,
-              ]}
+              style={styles.changeButton}
+            />
+            <GameButton
+              label={isTake ? "Take over" : "Claim"}
+              sub={
+                isTake
+                  ? `${priceInput} ⬡ · ${tesselsToEur(Number(priceInput) || effectiveMin)}`
+                  : "Free — you're on the tile"
+              }
+              icon={isTake ? "flag" : "camera"}
+              variant={isTake ? "gold" : "primary"}
+              loading={uploading}
               onPress={handleUpload}
-              disabled={uploading}
-            >
-              {uploading ? (
-                <ActivityIndicator color={c.primaryText} />
-              ) : (
-                <Text style={[styles.primaryText, { color: c.primaryText }]}>
-                  {isTake ? `Take over — ${priceInput} ⬡` : "Claim — Free"}
-                </Text>
-              )}
-            </PressableScale>
+              style={styles.uploadButton}
+            />
           </View>
         </View>
       ) : (
         <View style={styles.choices}>
           <Text style={[styles.title, { color: c.text }]}>
-            {isTake ? `Take over — ${effectiveMin} ⬡` : "Claim this tile"}
+            {isTake ? "Take over" : "Claim this tile"}
           </Text>
-          {sectorCellId ? (
-            <Text style={[styles.sectorText, { color: c.textTertiary }]}>
-              {sectorLabel(sectorCellId)}
-            </Text>
-          ) : null}
+          <Text style={[styles.subtitle, { color: c.textSecondary }]}>
+            {isTake
+              ? `Outshoot the current holder — ${effectiveMin} ⬡`
+              : "This square is yours for a photo"}
+          </Text>
 
-          <PressableScale
-            style={[
-              styles.choiceButton,
-              { backgroundColor: c.primary },
-              shadows.md,
-            ]}
+          {infoChips}
+
+          <GameButton
+            icon="camera-outline"
+            label="Take a photo"
+            variant="primary"
             onPress={() => pickImage(true)}
-          >
-            <IconLabel
-              icon="camera-outline"
-              label="Take a photo"
-              color={c.primaryText}
-              size={17}
-              textStyle={styles.choiceText}
-            />
-          </PressableScale>
-
-          <PressableScale
-            style={[
-              styles.choiceButton,
-              { backgroundColor: c.card, borderWidth: 1, borderColor: c.border },
-              shadows.sm,
-            ]}
+          />
+          <GameButton
+            icon="images-outline"
+            label="Choose from gallery"
+            variant="ghost"
             onPress={() => pickImage(false)}
-          >
-            <IconLabel
-              icon="images-outline"
-              label="Choose from gallery"
-              color={c.text}
-              size={17}
-              textStyle={styles.choiceText}
-            />
-          </PressableScale>
+          />
         </View>
       )}
 

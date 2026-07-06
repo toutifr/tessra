@@ -7,7 +7,7 @@ import {
   Text,
   View,
 } from "react-native";
-import { useLocalSearchParams, router } from "expo-router";
+import { useLocalSearchParams, router, Stack } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import * as Location from "expo-location";
@@ -17,6 +17,10 @@ import { Publication } from "../../src/types/square";
 import ReportButton from "../../src/components/ReportButton";
 import IconLabel from "../../src/components/IconLabel";
 import PressableScale from "../../src/components/PressableScale";
+import Avatar from "../../src/components/Avatar";
+import GameButton from "../../src/components/GameButton";
+import SectionHeader from "../../src/components/SectionHeader";
+import StatChip from "../../src/components/StatChip";
 import { DetailSkeleton } from "../../src/components/Skeleton";
 import { useVote } from "../../src/hooks/useVote";
 import { useShield } from "../../src/hooks/useShield";
@@ -28,16 +32,24 @@ import { track } from "../../src/lib/track";
 import { hapticLight, hapticSuccess } from "../../src/lib/haptics";
 import { sectorLabel } from "../../src/lib/sector";
 import { focusOnMap } from "../../src/lib/mapFocus";
-import { useThemeColors, fonts, spacing, radii, shadows, palette } from "../../src/theme";
+import { useThemeColors, fonts, spacing, radii, palette } from "../../src/theme";
 
 /** Fraîcheur d'une case d'après sa dernière activité */
-type Freshness = { icon: keyof typeof Ionicons.glyphMap; label: string };
-const FRESH_ALIVE: Freshness = { icon: "flame", label: "Alive" };
+type Freshness = { icon: keyof typeof Ionicons.glyphMap; label: string; color: string };
+const FRESH_ALIVE: Freshness = { icon: "flame", label: "Alive", color: palette.amber };
 function freshness(lastActivityAt: string): Freshness {
   const days = (Date.now() - new Date(lastActivityAt).getTime()) / 86_400_000;
   if (days < 3) return FRESH_ALIVE;
-  if (days <= 7) return { icon: "flame-outline", label: "Fading" };
-  return { icon: "snow", label: "Cold" };
+  if (days <= 7) return { icon: "flame-outline", label: "Fading", color: palette.amber };
+  return { icon: "snow", label: "Cold", color: palette.diamond };
+}
+
+/** "3m ago" / "5h ago" / "2d ago" — visuel uniquement */
+function timeAgo(iso: string): string {
+  const s = (Date.now() - new Date(iso).getTime()) / 1000;
+  if (s < 3600) return `${Math.max(1, Math.floor(s / 60))}m ago`;
+  if (s < 86_400) return `${Math.floor(s / 3600)}h ago`;
+  return `${Math.floor(s / 86_400)}d ago`;
 }
 
 const STATUS_LABELS: Record<SquareStatus, string> = {
@@ -46,6 +58,22 @@ const STATUS_LABELS: Record<SquareStatus, string> = {
   signale: "Reported",
   bloque: "Blocked",
 };
+
+const STATUS_ICONS: Record<SquareStatus, keyof typeof Ionicons.glyphMap> = {
+  libre: "sparkles",
+  occupe: "flag",
+  signale: "alert-circle",
+  bloque: "ban",
+};
+
+// Scrim bas de la photo hero — bandes rgba empilées (faux dégradé)
+const SCRIM_BANDS = [
+  "rgba(0,0,0,0.06)",
+  "rgba(0,0,0,0.16)",
+  "rgba(0,0,0,0.30)",
+  "rgba(0,0,0,0.44)",
+  "rgba(0,0,0,0.55)",
+] as const;
 
 export default function SquareDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -279,426 +307,439 @@ export default function SquareDetailScreen() {
   const freshDays =
     (Date.now() - new Date(square.last_activity_at).getTime()) / 86_400_000;
   const needsRevive = !justRevived && freshDays >= 3;
+  const fresh = justRevived ? FRESH_ALIVE : freshness(square.last_activity_at);
 
   return (
-    <ScrollView style={[styles.container, { backgroundColor: c.bg }]} contentContainerStyle={styles.content}>
-      {/* 1. Photo — avec badges ⚡ / bouclier */}
-      {publication?.image_url && (
-        <View style={styles.imageWrapper}>
-          <Image
-            source={{ uri: publication.image_url }}
-            style={[styles.image, isReported && styles.blurredImage]}
-            contentFit="cover"
-            transition={150}
-            cachePolicy="memory-disk"
-            blurRadius={isReported ? 20 : 0}
-          />
-          {isReported && (
-            <View style={[styles.reportedOverlay, { backgroundColor: c.overlay }]}>
-              <Text style={styles.reportedText}>Reported content</Text>
-            </View>
-          )}
-          {publication.is_pulse && (
-            <View style={styles.pulseBadge}>
-              <Ionicons name="flash" size={14} color="#FFFFFF" />
-            </View>
-          )}
-          {activeShield && (
-            <View style={styles.shieldPhotoBadge}>
-              <Ionicons
-                name="shield"
-                size={14}
-                color={
-                  activeShield.tier === "gold"
-                    ? palette.gold
-                    : activeShield.tier === "silver"
-                      ? palette.silver
-                      : palette.bronze
-                }
-              />
-            </View>
-          )}
-        </View>
-      )}
-
-      {/* Vote + follow — juste sous la photo, jamais enterrés */}
-      {publication && !isReported && (
-        <View style={styles.interactionRow}>
-          <Pressable
-            style={({ pressed }) => [
-              styles.interactionButton,
-              {
-                backgroundColor: hasVoted ? c.primarySoft : c.bgTertiary,
-                borderColor: hasVoted ? c.primary : "transparent",
-                borderWidth: hasVoted ? 1 : 0,
-                opacity: pressed ? 0.8 : 1,
-              },
-            ]}
-            onPress={handleVote}
-            disabled={voting || hasVoted}
-          >
-            <Ionicons
-              name={hasVoted ? "heart" : "heart-outline"}
-              size={18}
-              color={hasVoted ? c.primary : c.textSecondary}
-            />
-            <Text style={[styles.interactionLabel, { color: hasVoted ? c.primary : c.textSecondary }]}>
-              {voteCount}
-            </Text>
-          </Pressable>
-
-          {publication.user_id !== currentUserId && (
+    <>
+      {/* Locate — icône dans le header de la modal */}
+      <Stack.Screen
+        options={{
+          headerRight: () => (
             <Pressable
-              style={({ pressed }) => [
-                styles.followChip,
+              onPress={() => {
+                focusOnMap({ lat: square.lat, lng: square.lng });
+                router.push("/(tabs)");
+              }}
+              hitSlop={10}
+              style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
+              accessibilityLabel="Locate on map"
+            >
+              <Ionicons name="locate" size={22} color={c.text} />
+            </Pressable>
+          ),
+        }}
+      />
+      <ScrollView style={[styles.container, { backgroundColor: c.bg }]} contentContainerStyle={styles.content}>
+        {/* 1. Photo HERO — carte de collection : scrim bas + avatar + badges */}
+        {publication?.image_url && (
+          <View style={styles.heroWrap}>
+            <Image
+              source={{ uri: publication.image_url }}
+              style={[styles.heroImage, isReported && styles.blurredImage]}
+              contentFit="cover"
+              transition={150}
+              cachePolicy="memory-disk"
+              blurRadius={isReported ? 20 : 0}
+            />
+            {!isReported && (
+              <View style={styles.scrim} pointerEvents="none">
+                {SCRIM_BANDS.map((band) => (
+                  <View key={band} style={[styles.scrimBand, { backgroundColor: band }]} />
+                ))}
+              </View>
+            )}
+            {!isReported && (
+              <View style={styles.heroRow}>
+                <Avatar userId={publication.user_id} size={32} />
+                <View style={styles.heroText}>
+                  <Text style={styles.heroName} numberOfLines={1}>
+                    {isOwner ? "Your tile" : "Current holder"}
+                  </Text>
+                  <Text style={styles.heroTime}>{timeAgo(publication.created_at)}</Text>
+                </View>
+              </View>
+            )}
+            {isReported && (
+              <View style={[styles.reportedOverlay, { backgroundColor: c.overlay }]}>
+                <Text style={styles.reportedText}>Reported content</Text>
+              </View>
+            )}
+            {publication.is_pulse && (
+              <View style={styles.pulseBadge}>
+                <Ionicons name="flash" size={14} color="#FFFFFF" />
+              </View>
+            )}
+            {activeShield && (
+              <View style={styles.shieldPhotoBadge}>
+                <Ionicons
+                  name="shield"
+                  size={14}
+                  color={
+                    activeShield.tier === "gold"
+                      ? palette.gold
+                      : activeShield.tier === "silver"
+                        ? palette.silver
+                        : palette.bronze
+                  }
+                />
+              </View>
+            )}
+          </View>
+        )}
+
+        {/* 2. Rangée de stats — prix, statut, fraîcheur, secteur */}
+        <View style={styles.chipsRow}>
+          <StatChip
+            icon="pricetag"
+            value={square.last_price > 0 ? `${square.last_price} ⬡` : "Free"}
+            color={palette.gold}
+          />
+          <StatChip
+            icon={STATUS_ICONS[square.status]}
+            value={STATUS_LABELS[square.status]}
+            color={STATUS_COLORS[square.status]}
+          />
+          {square.status === "occupe" && (
+            <StatChip icon={fresh.icon} value={fresh.label} color={fresh.color} />
+          )}
+          {square.cell_id ? (
+            <StatChip icon="location" value={sectorLabel(square.cell_id)} color={palette.diamond} />
+          ) : null}
+        </View>
+
+        {/* Vote + follow — jamais enterrés */}
+        {publication && !isReported && (
+          <View style={styles.interactionRow}>
+            <PressableScale
+              style={[
+                styles.interactionButton,
                 {
-                  backgroundColor: isFollowingOwner ? c.primary : "transparent",
-                  borderColor: c.primary,
-                  opacity: pressed ? 0.8 : 1,
+                  backgroundColor: hasVoted ? "rgba(228,97,79,0.14)" : c.bgTertiary,
+                  borderColor: hasVoted ? palette.redstone : "transparent",
+                  borderWidth: hasVoted ? 1 : 0,
                 },
               ]}
-              onPress={handleFollow}
-              disabled={followLoading}
+              onPress={handleVote}
+              disabled={voting || hasVoted}
             >
-              <Text style={[
-                styles.followLabel,
-                { color: isFollowingOwner ? c.primaryText : c.primary },
-              ]}>
-                {isFollowingOwner ? "Following" : "Follow"}
+              <Ionicons
+                name={hasVoted ? "heart" : "heart-outline"}
+                size={18}
+                color={hasVoted ? palette.redstone : c.textSecondary}
+              />
+              <Text style={[styles.interactionLabel, { color: hasVoted ? palette.redstone : c.textSecondary }]}>
+                {voteCount}
               </Text>
-            </Pressable>
-          )}
-        </View>
-      )}
+            </PressableScale>
 
-      {/* 2. Secteur + statut + fraîcheur */}
-      {square.cell_id ? (
-        <View style={styles.sectorRow}>
-          <Text style={[styles.sectorText, { color: c.textTertiary }]}>
-            {sectorLabel(square.cell_id)}
-          </Text>
-          <Pressable
-            onPress={() => {
-              focusOnMap({ lat: square.lat, lng: square.lng });
-              router.push("/(tabs)");
-            }}
-            hitSlop={8}
-            style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
-            accessibilityLabel="Locate on map"
-          >
-            <Ionicons name="map-outline" size={16} color={c.textTertiary} />
-          </Pressable>
-        </View>
-      ) : null}
-      <View style={styles.statusRow}>
-        <View style={[styles.statusBadge, { backgroundColor: c.bgTertiary }]}>
-          <View style={[styles.statusDot, { backgroundColor: STATUS_COLORS[square.status] }]} />
-          <Text style={[styles.statusText, { color: c.text }]}>
-            {STATUS_LABELS[square.status]}
-          </Text>
-        </View>
-        {square.status === "occupe" && (() => {
-          const f = justRevived ? FRESH_ALIVE : freshness(square.last_activity_at);
-          return (
-            <IconLabel
-              icon={f.icon}
-              label={f.label}
-              color={c.textSecondary}
-              size={14}
-              gap={4}
-              textStyle={styles.freshnessLine}
-            />
-          );
-        })()}
-      </View>
-
-      {/* 3. UN SEUL CTA principal, selon qui regarde */}
-      {isOwner && square.status === "occupe" ? (
-        <View style={styles.ctaBlock}>
-          {needsRevive ? (
-            <>
+            {publication.user_id !== currentUserId && (
               <PressableScale
                 style={[
-                  styles.actionButton,
-                  { backgroundColor: palette.warning, opacity: reviving ? 0.7 : 1 },
-                  shadows.md,
+                  styles.followChip,
+                  {
+                    backgroundColor: isFollowingOwner ? c.primary : "transparent",
+                    borderColor: c.primary,
+                  },
                 ]}
-                onPress={handleRevive}
-                disabled={reviving}
+                onPress={handleFollow}
+                disabled={followLoading}
               >
-                <IconLabel
-                  icon="flame"
-                  label={reviving ? "Reviving…" : "Revive"}
-                  color="#FFFFFF"
-                  size={16}
-                  textStyle={styles.actionText}
-                />
+                <Text style={[
+                  styles.followLabel,
+                  { color: isFollowingOwner ? c.primaryText : c.primary },
+                ]}>
+                  {isFollowingOwner ? "Following" : "Follow"}
+                </Text>
               </PressableScale>
-              <Text style={[styles.ctaNote, { color: c.textTertiary }]}>
-                Be here in person to reset freshness (+5 ⬡)
-              </Text>
-            </>
-          ) : (
-            <View style={[styles.actionButton, styles.revivedState, { backgroundColor: c.bgTertiary }]}>
-              <IconLabel
-                icon="checkmark-circle"
-                label="Revived — your tile is alive"
-                color={c.textSecondary}
-                size={16}
-                textStyle={styles.actionText}
-              />
-            </View>
-          )}
-        </View>
-      ) : !isOwner && square.status === "libre" ? (
-        <View style={styles.ctaBlock}>
-          <PressableScale
-            style={[styles.actionButton, { backgroundColor: c.primary }, shadows.md]}
-            onPress={handleAction}
-          >
-            <IconLabel
-              icon="camera"
-              label="Claim this tile — Free"
-              color={c.primaryText}
-              size={16}
-              textStyle={styles.actionText}
-            />
-          </PressableScale>
-          <Text style={[styles.ctaNote, { color: c.textTertiary }]}>
-            You must be physically here
-          </Text>
-        </View>
-      ) : !isOwner && square.status === "occupe" ? (
-        <View style={styles.ctaBlock}>
-          <PressableScale
-            style={[
-              styles.actionButton,
-              { backgroundColor: activeShield ? c.bgTertiary : c.primary },
-              !activeShield && shadows.md,
-            ]}
-            onPress={handleAction}
-            disabled={!!activeShield}
-          >
-            {activeShield ? (
-              <IconLabel
-                icon="shield"
-                label="Tile protected"
-                color={c.textTertiary}
-                size={16}
-                textStyle={styles.actionText}
-              />
-            ) : (
-              <Text style={[styles.actionText, { color: c.primaryText }]}>
-                {`Take over — ${minPrice} ⬡`}
-              </Text>
             )}
-          </PressableScale>
-          {activeShield ? (
-            <Text style={[styles.ctaNote, { color: c.textTertiary }]}>
-              Protected until {new Date(activeShield.expires_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-            </Text>
-          ) : (
-            <>
-              <Text style={[styles.ctaNote, { color: c.textTertiary }]}>
-                {tesselsToEur(minPrice)}
-                {square.last_price > 0 ? ` · Last price: ${square.last_price} ⬡` : ""}
-              </Text>
-              {rushActive && (
-                <View style={styles.rushPriceRow}>
-                  <Text style={[styles.oldPrice, { color: c.textTertiary }]}>
-                    {getBasePrice(square)} ⬡
-                  </Text>
-                  <View style={styles.rushBadge}>
-                    <Ionicons name="flame" size={11} color="#fff" />
-                    <Text style={styles.rushBadgeText}>Rush Hour −50%</Text>
+          </View>
+        )}
+
+        {/* 3. UN SEUL CTA principal, selon qui regarde */}
+        {isOwner && square.status === "occupe" ? (
+          <View style={styles.ctaBlock}>
+            {needsRevive ? (
+              <>
+                <GameButton
+                  icon="flame"
+                  label="Revive"
+                  sub="Be here in person — +5 ⬡"
+                  variant="primary"
+                  loading={reviving}
+                  onPress={handleRevive}
+                />
+                <Text style={[styles.ctaNote, { color: c.textTertiary }]}>
+                  Being on site resets freshness
+                </Text>
+              </>
+            ) : (
+              <View style={[styles.revivedState, { backgroundColor: c.bgTertiary }]}>
+                <IconLabel
+                  icon="checkmark-circle"
+                  label="Revived — your tile is alive"
+                  color={c.textSecondary}
+                  size={16}
+                  textStyle={styles.revivedText}
+                />
+              </View>
+            )}
+          </View>
+        ) : !isOwner && square.status === "libre" ? (
+          <View style={styles.ctaBlock}>
+            <GameButton
+              icon="camera"
+              label="Claim this tile"
+              sub="Free — you must be physically here"
+              variant="primary"
+              onPress={handleAction}
+            />
+          </View>
+        ) : !isOwner && square.status === "occupe" ? (
+          <View style={styles.ctaBlock}>
+            {activeShield ? (
+              <>
+                <GameButton
+                  icon="shield"
+                  label="Tile protected"
+                  variant="dark"
+                  disabled
+                  onPress={handleAction}
+                />
+                <Text style={[styles.ctaNote, { color: c.textTertiary }]}>
+                  Protected until {new Date(activeShield.expires_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                </Text>
+              </>
+            ) : (
+              <>
+                <GameButton
+                  icon="flag"
+                  label={`Take over — ${minPrice} ⬡`}
+                  sub={`${tesselsToEur(minPrice)}${square.last_price > 0 ? ` · Last price ${square.last_price} ⬡` : ""}`}
+                  variant="gold"
+                  onPress={handleAction}
+                />
+                {rushActive && (
+                  <View style={styles.rushPriceRow}>
+                    <Text style={[styles.oldPrice, { color: c.textTertiary }]}>
+                      {getBasePrice(square)} ⬡
+                    </Text>
+                    <View style={styles.rushBadge}>
+                      <Ionicons name="flame" size={11} color="#fff" />
+                      <Text style={styles.rushBadgeText}>Rush Hour −50%</Text>
+                    </View>
                   </View>
-                </View>
-              )}
-            </>
-          )}
-        </View>
-      ) : null}
+                )}
+              </>
+            )}
+          </View>
+        ) : null}
 
-      {/* 4. Défense (owner) — Shield + Fortify, repliés derrière des accordéons */}
-      {isOwner && square.status === "occupe" && (
-        <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: c.text }]}>Defend</Text>
-
-          {/* 🛡 Shield */}
-          {activeShield ? (
-            <View style={[styles.defendRow, { backgroundColor: c.card, borderColor: c.cardBorder }, shadows.sm]}>
-              <Ionicons name="shield" size={18} color={c.text} style={styles.defendIcon} />
-              <View style={styles.shieldInfo}>
-                <Text style={[styles.shieldOptionTitle, { color: c.text }]}>
-                  Shield active ({activeShield.tier === "gold" ? "Gold" : activeShield.tier === "silver" ? "Silver" : "Bronze"})
-                </Text>
-                <Text style={[styles.shieldOptionDesc, { color: c.textTertiary }]}>
-                  Untouchable until {new Date(activeShield.expires_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                </Text>
-              </View>
+        {/* 4. Défense (owner) — Shield + Fortify, repliés derrière des accordéons */}
+        {isOwner && square.status === "occupe" && (
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <SectionHeader title="Defend" color={palette.redstone} />
             </View>
-          ) : (
-            <>
-              <Pressable
-                style={({ pressed }) => [
-                  styles.defendRow,
-                  { backgroundColor: c.card, borderColor: c.cardBorder, opacity: pressed ? 0.85 : 1 },
-                  shadows.sm,
-                ]}
-                onPress={() => { hapticLight(); setShieldOpen((v) => !v); }}
-              >
-                <Ionicons name="shield-outline" size={18} color={c.text} style={styles.defendIcon} />
+
+            {/* 🛡 Shield */}
+            {activeShield ? (
+              <View style={[styles.defendRow, { backgroundColor: c.card, borderColor: c.cardBorder }]}>
+                <Ionicons name="shield" size={18} color={c.text} style={styles.defendIcon} />
                 <View style={styles.shieldInfo}>
-                  <Text style={[styles.shieldOptionTitle, { color: c.text }]}>Shield</Text>
+                  <Text style={[styles.shieldOptionTitle, { color: c.text }]}>
+                    Shield active ({activeShield.tier === "gold" ? "Gold" : activeShield.tier === "silver" ? "Silver" : "Bronze"})
+                  </Text>
                   <Text style={[styles.shieldOptionDesc, { color: c.textTertiary }]}>
-                    Block takeovers for a few hours
+                    Untouchable until {new Date(activeShield.expires_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                   </Text>
                 </View>
-                <Ionicons
-                  name={shieldOpen ? "chevron-up" : "chevron-down"}
-                  size={16}
-                  color={c.textTertiary}
-                />
-              </Pressable>
-              {shieldOpen && (
-                <View style={[styles.shieldOptions, { marginTop: spacing.sm, marginBottom: spacing.sm }]}>
-                  {([
-                    { tier: "bronze" as const, label: "Bronze", desc: "1h — Free (1/day)", color: palette.bronze },
-                    { tier: "silver" as const, label: "Silver", desc: "6h — 150 ⬡", color: palette.silver },
-                    { tier: "gold" as const, label: "Gold", desc: "24h — 500 ⬡", color: palette.gold },
-                  ]).map((opt) => (
-                    <Pressable
-                      key={opt.tier}
-                      style={({ pressed }) => [
-                        styles.shieldOption,
-                        { backgroundColor: c.card, borderColor: c.cardBorder, opacity: pressed ? 0.85 : 1 },
-                        shadows.sm,
-                      ]}
-                      onPress={() => handleShield(opt.tier)}
-                      disabled={activating}
-                    >
-                      <View style={[styles.shieldDot, { backgroundColor: opt.color }]} />
-                      <View style={styles.shieldInfo}>
-                        <Text style={[styles.shieldOptionTitle, { color: c.text }]}>{opt.label}</Text>
-                        <Text style={[styles.shieldOptionDesc, { color: c.textTertiary }]}>{opt.desc}</Text>
-                      </View>
-                    </Pressable>
-                  ))}
-                </View>
-              )}
-            </>
-          )}
+              </View>
+            ) : (
+              <>
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.defendRow,
+                    { backgroundColor: c.card, borderColor: c.cardBorder, opacity: pressed ? 0.85 : 1 },
+                  ]}
+                  onPress={() => { hapticLight(); setShieldOpen((v) => !v); }}
+                >
+                  <Ionicons name="shield-outline" size={18} color={c.text} style={styles.defendIcon} />
+                  <View style={styles.shieldInfo}>
+                    <Text style={[styles.shieldOptionTitle, { color: c.text }]}>Shield</Text>
+                    <Text style={[styles.shieldOptionDesc, { color: c.textTertiary }]}>
+                      Block takeovers for a few hours
+                    </Text>
+                  </View>
+                  <Ionicons
+                    name={shieldOpen ? "chevron-up" : "chevron-down"}
+                    size={16}
+                    color={c.textTertiary}
+                  />
+                </Pressable>
+                {shieldOpen && (
+                  <View style={styles.optionList}>
+                    {([
+                      { tier: "bronze" as const, label: "Bronze", desc: "1h — Free (1/day)" },
+                      { tier: "silver" as const, label: "Silver", desc: "6h — 150 ⬡" },
+                      { tier: "gold" as const, label: "Gold", desc: "24h — 500 ⬡" },
+                    ]).map((opt) => (
+                      <GameButton
+                        key={opt.tier}
+                        size="md"
+                        variant="ghost"
+                        label={opt.label}
+                        sub={opt.desc}
+                        disabled={activating}
+                        onPress={() => handleShield(opt.tier)}
+                      />
+                    ))}
+                  </View>
+                )}
+              </>
+            )}
 
-          {/* 💪 Fortify */}
-          {square.last_price < 10000 && (
-            <>
-              <Pressable
-                style={({ pressed }) => [
-                  styles.defendRow,
-                  { backgroundColor: c.card, borderColor: c.cardBorder, opacity: pressed ? 0.85 : 1, marginTop: spacing.sm },
-                  shadows.sm,
-                ]}
-                onPress={() => { hapticLight(); setFortifyOpen((v) => !v); }}
-              >
-                <Ionicons name="trending-up" size={18} color={c.text} style={styles.defendIcon} />
-                <View style={styles.shieldInfo}>
-                  <Text style={[styles.shieldOptionTitle, { color: c.text }]}>Fortify</Text>
-                  <Text style={[styles.shieldOptionDesc, { color: c.textTertiary }]}>
-                    Raise the takeover price — now {square.last_price} ⬡, attackers pay ≥ {minTakePrice(square.last_price)} ⬡
+            {/* 💪 Fortify */}
+            {square.last_price < 10000 && (
+              <>
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.defendRow,
+                    { backgroundColor: c.card, borderColor: c.cardBorder, opacity: pressed ? 0.85 : 1, marginTop: spacing.sm },
+                  ]}
+                  onPress={() => { hapticLight(); setFortifyOpen((v) => !v); }}
+                >
+                  <Ionicons name="trending-up" size={18} color={c.text} style={styles.defendIcon} />
+                  <View style={styles.shieldInfo}>
+                    <Text style={[styles.shieldOptionTitle, { color: c.text }]}>Fortify</Text>
+                    <Text style={[styles.shieldOptionDesc, { color: c.textTertiary }]}>
+                      Raise the takeover price — now {square.last_price} ⬡, attackers pay ≥ {minTakePrice(square.last_price)} ⬡
+                    </Text>
+                  </View>
+                  <Ionicons
+                    name={fortifyOpen ? "chevron-up" : "chevron-down"}
+                    size={16}
+                    color={c.textTertiary}
+                  />
+                </Pressable>
+                {fortifyOpen && (
+                  <View style={styles.optionList}>
+                    {[100, 500, 1000].map((amount) => (
+                      <GameButton
+                        key={amount}
+                        size="md"
+                        variant="ghost"
+                        label={`+${amount} ⬡`}
+                        sub={`${tesselsToEur(amount)} — min. takeover ${minTakePrice(Math.min(10000, square.last_price + amount))} ⬡`}
+                        disabled={fortifying}
+                        onPress={() => handleFortify(amount)}
+                      />
+                    ))}
+                  </View>
+                )}
+              </>
+            )}
+          </View>
+        )}
+
+        {/* Publication History — timeline */}
+        {history.length > 1 && (
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <SectionHeader title={`History (${history.length})`} color={palette.gold} />
+            </View>
+            {history.map((pub, i) => (
+              <View key={pub.id} style={styles.historyItem}>
+                <View style={styles.timelineCol}>
+                  <View
+                    style={[
+                      styles.timelineDot,
+                      {
+                        backgroundColor:
+                          pub.status === "active"
+                            ? palette.grass
+                            : pub.price_paid
+                              ? palette.gold
+                              : palette.gray500,
+                      },
+                    ]}
+                  />
+                  {i < history.length - 1 && (
+                    <View style={[styles.timelineLine, { backgroundColor: c.separator }]} />
+                  )}
+                </View>
+                <Avatar userId={pub.user_id} size={24} />
+                <View style={styles.historyInfo}>
+                  <Text style={[styles.historyStatus, { color: c.text }]}>
+                    {pub.status === "active" ? "Current" : "Replaced"}
+                  </Text>
+                  <Text style={[styles.historyDate, { color: c.textTertiary }]}>
+                    {new Date(pub.created_at).toLocaleDateString("en-US")}
                   </Text>
                 </View>
-                <Ionicons
-                  name={fortifyOpen ? "chevron-up" : "chevron-down"}
-                  size={16}
-                  color={c.textTertiary}
-                />
-              </Pressable>
-              {fortifyOpen && (
-                <View style={[styles.shieldOptions, { marginTop: spacing.sm }]}>
-                  {[100, 500, 1000].map((amount) => (
-                    <Pressable
-                      key={amount}
-                      style={({ pressed }) => [
-                        styles.shieldOption,
-                        { backgroundColor: c.card, borderColor: c.cardBorder, opacity: pressed || fortifying ? 0.85 : 1 },
-                        shadows.sm,
-                      ]}
-                      onPress={() => handleFortify(amount)}
-                      disabled={fortifying}
-                    >
-                      <View style={[styles.shieldDot, { backgroundColor: palette.gold }]} />
-                      <View style={styles.shieldInfo}>
-                        <Text style={[styles.shieldOptionTitle, { color: c.text }]}>+{amount} ⬡</Text>
-                        <Text style={[styles.shieldOptionDesc, { color: c.textTertiary }]}>
-                          {tesselsToEur(amount)} — min. takeover {minTakePrice(Math.min(10000, square.last_price + amount))} ⬡
-                        </Text>
-                      </View>
-                    </Pressable>
-                  ))}
-                </View>
-              )}
-            </>
-          )}
-        </View>
-      )}
-
-      {/* Publication History */}
-      {history.length > 1 && (
-        <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: c.text }]}>
-            History ({history.length})
-          </Text>
-          {history.map((pub) => (
-            <View
-              key={pub.id}
-              style={[styles.historyItem, { borderBottomColor: c.separator }]}
-            >
-              {pub.image_url && (
-                <Image
-                  source={{ uri: pub.image_url }}
-                  style={styles.historyThumb}
-                  contentFit="cover"
-                  transition={150}
-                  cachePolicy="memory-disk"
-                  recyclingKey={pub.id}
-                />
-              )}
-              <View style={styles.historyInfo}>
-                <Text style={[styles.historyStatus, { color: c.text }]}>
-                  {pub.status === "active" ? "Current" : "Replaced"}
-                </Text>
-                <Text style={[styles.historyDate, { color: c.textTertiary }]}>
-                  {new Date(pub.created_at).toLocaleDateString("en-US")}
+                <Text style={[styles.historyPrice, { color: pub.price_paid ? palette.goldDark : c.textSecondary }]}>
+                  {pub.price_paid ? `${pub.price_paid} ⬡` : "Free"}
                 </Text>
               </View>
-              <Text style={[styles.historyPrice, { color: c.primary }]}>
-                {pub.price_paid ? `${pub.price_paid} ⬡` : "Free"}
-              </Text>
-            </View>
-          ))}
-        </View>
-      )}
+            ))}
+          </View>
+        )}
 
-      {publication && !isReported && (
-        <ReportButton publicationId={publication.id} squareId={square.id} />
-      )}
-    </ScrollView>
+        {publication && !isReported && (
+          <ReportButton publicationId={publication.id} squareId={square.id} />
+        )}
+      </ScrollView>
+    </>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  content: { paddingBottom: 40 },
+  content: { paddingTop: spacing.md, paddingBottom: 40 },
   loading: { flex: 1, justifyContent: "center", alignItems: "center" },
 
-  imageWrapper: { position: "relative" },
-  image: { width: "100%", height: 320, marginBottom: spacing.base },
+  // ─── Hero "carte de collection" ───
+  heroWrap: {
+    position: "relative",
+    marginHorizontal: spacing.base,
+    marginBottom: spacing.base,
+    borderRadius: radii.xl,
+    overflow: "hidden",
+  },
+  heroImage: { width: "100%", aspectRatio: 4 / 3 },
   blurredImage: { opacity: 0.5 },
+  scrim: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: 110,
+  },
+  scrimBand: { flex: 1 },
+  heroRow: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm + 2,
+    padding: spacing.md,
+  },
+  heroText: { flex: 1 },
+  heroName: {
+    color: "#FFFFFF",
+    fontSize: fonts.sizes.base,
+    fontWeight: fonts.weights.bold,
+  },
+  heroTime: {
+    color: "rgba(255,255,255,0.75)",
+    fontSize: fonts.sizes.xs,
+    fontWeight: fonts.weights.semibold,
+    marginTop: 1,
+  },
   reportedOverlay: {
     ...StyleSheet.absoluteFillObject,
-    marginBottom: spacing.base,
     justifyContent: "center", alignItems: "center",
-    borderRadius: 0,
   },
   reportedText: { color: "#fff", fontSize: fonts.sizes.lg, fontWeight: fonts.weights.bold },
   pulseBadge: {
@@ -726,64 +767,14 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
 
-  ctaBlock: {
-    marginBottom: spacing.lg,
-    alignItems: "center",
-  },
-  ctaNote: {
-    fontSize: fonts.sizes.xs,
-    marginTop: spacing.sm,
-    textAlign: "center",
-    paddingHorizontal: spacing.base,
-  },
-  revivedState: { marginBottom: 0 },
-
-  defendRow: {
+  // ─── Stats ───
+  chipsRow: {
     flexDirection: "row",
-    alignItems: "center",
-    padding: spacing.md,
-    borderRadius: radii.md,
-    borderWidth: 1,
-  },
-  defendIcon: { marginRight: spacing.md },
-  freshnessLine: {
-    fontSize: fonts.sizes.sm,
-    fontWeight: fonts.weights.semibold,
-  },
-  reviveButton: {
-    borderRadius: radii.lg,
-    padding: spacing.base,
-    alignItems: "center",
-  },
-
-  sectorRow: {
-    flexDirection: "row",
-    alignItems: "center",
+    flexWrap: "wrap",
     gap: spacing.sm,
     paddingHorizontal: spacing.base,
-    marginBottom: spacing.sm,
+    marginBottom: spacing.base,
   },
-  sectorText: {
-    fontSize: fonts.sizes.sm,
-    fontWeight: fonts.weights.semibold,
-  },
-  statusRow: {
-    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
-    paddingHorizontal: spacing.base, marginBottom: spacing.md,
-  },
-  statusBadge: {
-    flexDirection: "row", alignItems: "center",
-    paddingHorizontal: spacing.md, paddingVertical: spacing.xs + 2,
-    borderRadius: radii.full,
-  },
-  statusDot: { width: 8, height: 8, borderRadius: 4, marginRight: spacing.sm },
-  statusText: { fontSize: fonts.sizes.sm, fontWeight: fonts.weights.semibold },
-  shieldBadge: {
-    flexDirection: "row", alignItems: "center",
-    paddingHorizontal: spacing.md, paddingVertical: spacing.xs + 2,
-    borderRadius: radii.full,
-  },
-  shieldText: { fontSize: fonts.sizes.sm, fontWeight: fonts.weights.semibold },
 
   interactionRow: {
     flexDirection: "row", alignItems: "center", gap: spacing.sm,
@@ -801,13 +792,23 @@ const styles = StyleSheet.create({
   },
   followLabel: { fontSize: fonts.sizes.sm, fontWeight: fonts.weights.semibold },
 
-  priceCard: {
-    marginHorizontal: spacing.base, borderRadius: radii.md,
-    padding: spacing.base, alignItems: "center",
-    marginBottom: spacing.base, borderWidth: 1,
+  // ─── CTA ───
+  ctaBlock: {
+    paddingHorizontal: spacing.base,
+    marginBottom: spacing.xl,
   },
-  priceLabel: { fontSize: fonts.sizes.xs, marginBottom: spacing.xs },
-  price: { fontSize: fonts.sizes.xxl, fontWeight: fonts.weights.heavy },
+  ctaNote: {
+    fontSize: fonts.sizes.xs,
+    marginTop: spacing.sm,
+    textAlign: "center",
+    paddingHorizontal: spacing.base,
+  },
+  revivedState: {
+    borderRadius: radii.lg,
+    padding: spacing.base,
+    alignItems: "center",
+  },
+  revivedText: { fontSize: fonts.sizes.base, fontWeight: fonts.weights.semibold },
   rushPriceRow: {
     flexDirection: "row", alignItems: "center", justifyContent: "center",
     gap: spacing.sm, marginTop: spacing.sm,
@@ -827,38 +828,34 @@ const styles = StyleSheet.create({
     paddingVertical: 3,
   },
   rushBadgeText: { color: "#fff", fontSize: fonts.sizes.xs, fontWeight: fonts.weights.bold },
-  priceDetail: { fontSize: fonts.sizes.xs, marginTop: spacing.xs },
 
-  actionButton: {
-    alignSelf: "stretch",
-    marginHorizontal: spacing.base, borderRadius: radii.lg,
-    padding: spacing.base, alignItems: "center",
-  },
-  actionText: { fontSize: fonts.sizes.base, fontWeight: fonts.weights.semibold },
+  // ─── Sections ───
+  section: { paddingHorizontal: spacing.base, marginBottom: spacing.xl },
+  sectionHeader: { marginBottom: spacing.md },
 
-  section: { paddingHorizontal: spacing.base, marginBottom: spacing.lg },
-  sectionTitle: {
-    fontSize: fonts.sizes.lg, fontWeight: fonts.weights.bold,
-    marginBottom: spacing.md,
+  defendRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: spacing.base,
+    borderRadius: radii.lg,
+    borderWidth: 1,
   },
-
-  shieldOptions: { gap: spacing.sm },
-  shieldOption: {
-    flexDirection: "row", alignItems: "center",
-    padding: spacing.md, borderRadius: radii.md, borderWidth: 1,
-  },
-  shieldDot: { width: 12, height: 12, borderRadius: 6, marginRight: spacing.md },
+  defendIcon: { marginRight: spacing.md },
+  optionList: { gap: spacing.sm, marginTop: spacing.sm, marginBottom: spacing.sm },
   shieldInfo: { flex: 1 },
   shieldOptionTitle: { fontSize: fonts.sizes.base, fontWeight: fonts.weights.semibold },
   shieldOptionDesc: { fontSize: fonts.sizes.xs, marginTop: 2 },
 
+  // ─── History timeline ───
   historyItem: {
     flexDirection: "row", alignItems: "center", gap: spacing.md,
-    paddingVertical: spacing.md, borderBottomWidth: StyleSheet.hairlineWidth,
+    paddingVertical: spacing.sm,
   },
-  historyThumb: { width: 44, height: 44, borderRadius: radii.sm },
+  timelineCol: { width: 12, alignItems: "center", alignSelf: "stretch" },
+  timelineDot: { width: 10, height: 10, borderRadius: 5, marginTop: spacing.md },
+  timelineLine: { flex: 1, width: 2, borderRadius: 1, marginTop: 2 },
   historyInfo: { flex: 1 },
   historyStatus: { fontSize: fonts.sizes.sm, fontWeight: fonts.weights.semibold },
   historyDate: { fontSize: fonts.sizes.xs, marginTop: 2 },
-  historyPrice: { fontSize: fonts.sizes.sm, fontWeight: fonts.weights.semibold },
+  historyPrice: { fontSize: fonts.sizes.sm, fontWeight: fonts.weights.bold },
 });

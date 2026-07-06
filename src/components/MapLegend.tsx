@@ -3,7 +3,7 @@ import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-nati
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import PressableScale from "./PressableScale";
+import GameButton from "./GameButton";
 import TargetPin from "./TargetPin";
 import { fonts, palette, radii, spacing } from "../theme";
 
@@ -75,17 +75,17 @@ export default function MapLegend({
             <Row swatch={<GridSwatch />} text="1 tile = 1 km² — one photo each" />
           </ScrollView>
 
-          <PressableScale
+          <GameButton
+            icon="book-outline"
+            label="How to play"
+            variant="dark"
+            size="md"
             style={styles.howToButton}
             onPress={() => {
               onClose();
               router.push("/how-to-play");
             }}
-            accessibilityLabel="How to play"
-          >
-            <Ionicons name="book-outline" size={16} color="#FFFFFF" />
-            <Text style={styles.howToText}>How to play</Text>
-          </PressableScale>
+          />
         </View>
       </View>
     </Modal>
@@ -125,8 +125,8 @@ const styles = StyleSheet.create({
   backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(0,0,0,0.45)" },
   sheet: {
     backgroundColor: palette.dark100,
-    borderTopLeftRadius: radii.xl,
-    borderTopRightRadius: radii.xl,
+    borderTopLeftRadius: radii.xxl,
+    borderTopRightRadius: radii.xxl,
     borderWidth: 1,
     borderBottomWidth: 0,
     borderColor: palette.darkBorder,
@@ -207,9 +207,9 @@ const styles = StyleSheet.create({
     width: 30,
     height: 30,
     borderRadius: 15,
-    backgroundColor: "rgba(28, 28, 30, 0.92)",
+    backgroundColor: "rgba(17,22,26,0.92)",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.15)",
+    borderColor: palette.darkBorder,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -238,17 +238,5 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(255,255,255,0.3)",
   },
 
-  howToButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: spacing.sm,
-    backgroundColor: palette.dark300,
-    borderWidth: 1,
-    borderColor: palette.darkBorder,
-    borderRadius: radii.lg,
-    paddingVertical: spacing.md,
-    marginTop: spacing.md,
-  },
-  howToText: { color: "#FFFFFF", fontSize: fonts.sizes.base, fontWeight: fonts.weights.semibold },
+  howToButton: { marginTop: spacing.md },
 });

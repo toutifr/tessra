@@ -99,7 +99,7 @@ export default function RushBanner({
       <View
         style={[
           styles.banner,
-          { backgroundColor: c.bgSecondary, borderColor: c.cardBorder, borderWidth: 1 },
+          { backgroundColor: c.cardRaised, borderColor: c.border, borderWidth: 1 },
           style,
         ]}
       >
@@ -117,7 +117,7 @@ export default function RushBanner({
 const styles = StyleSheet.create({
   banner: {
     flexDirection: "row",
-    borderRadius: radii.md,
+    borderRadius: radii.lg,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
     alignItems: "center",
